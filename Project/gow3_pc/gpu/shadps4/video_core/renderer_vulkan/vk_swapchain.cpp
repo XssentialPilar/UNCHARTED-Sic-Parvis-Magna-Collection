@@ -19,6 +19,7 @@
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#include "apds/apds.h"
 
 namespace Vulkan {
 
@@ -184,7 +185,10 @@ void Swapchain::SetHDR(bool hdr) {
                                                  : surface_format.format);
 }
 
+static std::atomic<uint64_t> s_apds_frame_counter{0};
+
 bool Swapchain::AcquireNextImage() {
+    APDS::RecordFrameBegin(s_apds_frame_counter.load(std::memory_order_relaxed) + 1);
     if (headless || use_dxgi) return true; // Presenter finishes offscreen/DXGI shared submission.
     vk::Device device = instance.GetDevice();
     vk::Result result;
@@ -277,6 +281,7 @@ bool Swapchain::Present() {
         if (!ok) {
             needs_recreation = true;
         }
+        APDS::RecordFramePresent(++s_apds_frame_counter);
         return !needs_recreation;
     }
     frame_pacer.Wait(fps_cap, vsync, display_hz, pacer_mode);
@@ -301,6 +306,7 @@ bool Swapchain::Present() {
     }
 
     frame_index = (frame_index + 1) % image_count;
+    APDS::RecordFramePresent(++s_apds_frame_counter);
 
     return !needs_recreation;
 }

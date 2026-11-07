@@ -24,6 +24,7 @@
 #include "video_core/texture_cache/texture_cache.h"
 #include "gow3_prompts.h"
 #include "video_core/texture_cache/tile_manager.h"
+#include "apds/apds.h"
 
 // src/runtime_videodec.c: the last decoded video frame buffer (diagnostics).
 extern "C" volatile unsigned long long runtime_video_frame_lo, runtime_video_frame_hi;
@@ -1606,6 +1607,7 @@ void TextureCache::RefreshImage(Image& image) {
     }
 
     runtime.UploadImage(&image, buffer, image_copies);
+    APDS::RecordResourceUpload("TEXTURE", std::to_string(image.info.guest_address), image.info.guest_size, image.info.resources.levels);
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
@@ -1669,6 +1671,7 @@ void TextureCache::RegisterImage(ImageId image_id) {
 
 void TextureCache::UnregisterImage(ImageId image_id) {
     Image& image = slot_images[image_id];
+    APDS::RecordResourceEvict("TEXTURE", std::to_string(image.info.guest_address), image.info.guest_size);
     ASSERT_MSG(True(image.flags & ImageFlagBits::Registered),
                "Trying to unregister an already unregistered image");
     image.flags &= ~ImageFlagBits::Registered;

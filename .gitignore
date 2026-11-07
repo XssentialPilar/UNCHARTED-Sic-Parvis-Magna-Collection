@@ -1,2 +1,7 @@
 References/
+Diagnostics/Sessions/*
+!Diagnostics/Sessions/.gitkeep
+analysis/
+__pycache__/
+*.pyc
 

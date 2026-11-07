@@ -174,6 +174,12 @@ endif()
 # SHIM_SOURCES at CMakeLists.txt:144 (file)
 file(GLOB NEW_GLOB LIST_DIRECTORIES true "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/*/*.cpp")
 set(OLD_GLOB
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/apds/apds.cpp"
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/apds/apds_cpu.cpp"
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/apds/apds_crash_watchdog.cpp"
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/apds/apds_frame.cpp"
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/apds/apds_gpu.cpp"
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/apds/apds_memory.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/common/assert.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/videodec2/videodec2.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/videodec2/videodec2_impl.cpp"

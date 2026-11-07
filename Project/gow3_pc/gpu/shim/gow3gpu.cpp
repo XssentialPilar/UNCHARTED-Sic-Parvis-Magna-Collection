@@ -3,6 +3,7 @@
 #include "gow3_write_log.h"
 // gow3: glue between the C loader and the vendored shadPS4 video core.
 #include "gow3_overlay.h"
+#include "apds/apds.h"
 #include "gow3_png.h"
 #include "gow3_settings.h"
 #include "gow3_thumbnail.h"
@@ -484,6 +485,8 @@ static void StartProfileWriter() {
 
 extern "C" int gow3gpu_init(const Gow3GpuConfig* config) {
     Gow3Settings::Load();
+    APDS::Initialize();
+    std::atexit(APDS::Shutdown);
 #ifdef GOW3_PGO_GENERATE
     StartProfileWriter();
 #endif

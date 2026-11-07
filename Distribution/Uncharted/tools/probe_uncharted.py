@@ -1481,6 +1481,8 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     user = args.user_dir
     user.mkdir(parents=True, exist_ok=True)
     scripts = ROOT / "gow3_pc/scripts"
+    if not scripts.exists():
+        scripts = ROOT / "Project/gow3_pc/scripts"
     for script in ("prepare.py", "link_modules.py", "content_profile.py"):
         prepare_command = [sys.executable, str(scripts / script), str(game), "--out", str(out)]
         if script != "content_profile.py":
@@ -1646,6 +1648,9 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
                 env.setdefault("GOW3_MIP_LOD_BIAS", "0.35")
     elif tex_q == "low":
         env.setdefault("GOW3_MIP_LOD_BIAS", "0.75")
+    ini_telemetry = ini_value(settings_file, "telemetry_profile", "STANDARD")
+    env.setdefault("GOW3_TELEMETRY_PROFILE", os.environ.get("GOW3_TELEMETRY_PROFILE") or ini_telemetry or "STANDARD")
+    env.setdefault("GOW3_TELEMETRY_ENABLED", os.environ.get("GOW3_TELEMETRY_ENABLED", "1"))
 
     wanted = cheat_names(executable)
     rewards = os.environ.get("UNCHARTED_UNLOCK_REWARDS", "0") == "1"
