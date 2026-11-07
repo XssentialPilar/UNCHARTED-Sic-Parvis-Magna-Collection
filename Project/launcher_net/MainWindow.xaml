@@ -2,30 +2,39 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Uncharted: Sic Parvis Magna Collection"
-        Width="1280" Height="720"
-        MinWidth="1024" MinHeight="600"
+        Width="1280" Height="730"
+        MinWidth="1080" MinHeight="640"
         WindowStartupLocation="CenterScreen"
         Background="#0B0D10"
         WindowStyle="SingleBorderWindow"
         Foreground="#EAEAEA">
 
     <Window.Resources>
-        <!-- Button styles -->
+        <!-- Storyboards / Animations -->
+        <CubicEase x:Key="SmoothEase" EasingMode="EaseOut"/>
+
+        <!-- Button styles with smooth hover transitions -->
         <Style x:Key="NavButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="#C2B294"/>
             <Setter Property="FontFamily" Value="Cinzel, Georgia, serif"/>
-            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontSize" Value="16"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Padding" Value="12,10"/>
-            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="0,3"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="1.0" ScaleY="1.0"/>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -40,20 +49,20 @@
         </Style>
 
         <Style x:Key="PresetButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#22000000"/>
+            <Setter Property="Background" Value="#1A000000"/>
             <Setter Property="Foreground" Value="#C2B294"/>
             <Setter Property="FontFamily" Value="Segoe UI, sans-serif"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="12,6"/>
-            <Setter Property="Margin" Value="4,0"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="3,0"/>
             <Setter Property="BorderBrush" Value="#44C2B294"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -74,13 +83,13 @@
             <Setter Property="FontFamily" Value="Cinzel, Georgia, serif"/>
             <Setter Property="FontSize" Value="18"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Padding" Value="32,14"/>
+            <Setter Property="Padding" Value="34,14"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -92,17 +101,44 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="KeybindButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#161920"/>
+            <Setter Property="Foreground" Value="#E5C158"/>
+            <Setter Property="FontFamily" Value="Segoe UI, sans-serif"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderBrush" Value="#44554420"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#E5C158"/>
+                                <Setter TargetName="border" Property="Background" Value="#22E5C158"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
-        <!-- Background Desk Map -->
+        <!-- Background Desk Map Artwork -->
         <Image Source="Assets/spm_desk_bg.png" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-        <!-- Ambient Dark Vignette Overlay -->
+        <!-- Dark Ambient Vignette -->
         <Rectangle Fill="#880A0C0F"/>
 
-        <!-- Main Layout Frame with Golden Border -->
-        <Border Margin="18" BorderBrush="#554420" BorderThickness="1.5" CornerRadius="6" Background="#CC11141A">
+        <!-- Main Frame -->
+        <Border Margin="16" BorderBrush="#554420" BorderThickness="1.5" CornerRadius="8" Background="#CC11141A">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="90"/>
@@ -111,20 +147,39 @@
                 </Grid.RowDefinitions>
 
                 <!-- HEADER -->
-                <Grid Grid.Row="0" Margin="30,15,30,0">
+                <Grid Grid.Row="0" Margin="25,12,25,0">
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="UNCHARTED" FontFamily="Cinzel, Georgia, serif" FontSize="28" FontWeight="Bold" Foreground="#F5F5F5"/>
-                        <TextBlock Text="SIC PARVIS MAGNA COLLECTION" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="SemiBold" Foreground="#E5C158" Margin="1,2,0,0"/>
+                        <TextBlock x:Name="TxtAppTitleMain" Text="UNCHARTED" FontFamily="Cinzel, Georgia, serif" FontSize="27" FontWeight="Bold" Foreground="#F5F5F5"/>
+                        <TextBlock x:Name="TxtAppTitleSub" Text="SIC PARVIS MAGNA COLLECTION" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="SemiBold" Foreground="#E5C158" Margin="1,2,0,0"/>
                     </StackPanel>
 
-                    <!-- QUICK PRESETS -->
+                    <!-- HEADER ACTIONS: LANGUAGE SELECTOR + QUICK PRESETS -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <TextBlock Text="PREAJUSTES:" FontFamily="Segoe UI" FontSize="11" FontWeight="Bold" Foreground="#888" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <Button Content="iGPU" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_iGPU"/>
-                        <Button Content="BAJO 1GB" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Low"/>
-                        <Button Content="MEDIO 2GB ★" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Med"/>
-                        <Button Content="ALTO" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_High"/>
-                        <Button Content="ULTRA" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Ultra"/>
+                        <!-- Language Selector -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
+                            <TextBlock x:Name="TxtLangLabel" Text="Idioma:" FontSize="11" FontWeight="Bold" Foreground="#888" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox x:Name="ComboLanguage" Width="170" SelectionChanged="OnLanguageChanged">
+                                <ComboBoxItem Content="Auto (Sistema)" Tag="auto"/>
+                                <ComboBoxItem Content="Español (Latinoamérica)" Tag="es_419"/>
+                                <ComboBoxItem Content="Español (España)" Tag="es_ES"/>
+                                <ComboBoxItem Content="English" Tag="en"/>
+                                <ComboBoxItem Content="Português (Brasil)" Tag="pt_BR"/>
+                                <ComboBoxItem Content="Français" Tag="fr"/>
+                                <ComboBoxItem Content="Deutsch" Tag="de"/>
+                                <ComboBoxItem Content="Italiano" Tag="it"/>
+                                <ComboBoxItem Content="Русский" Tag="ru"/>
+                                <ComboBoxItem Content="日本語" Tag="ja"/>
+                                <ComboBoxItem Content="简体中文" Tag="zh_CN"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Presets -->
+                        <TextBlock x:Name="TxtPresetsHeader" Text="PREAJUSTES:" FontFamily="Segoe UI" FontSize="11" FontWeight="Bold" Foreground="#888" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Button x:Name="BtnPresetIgpu" Content="iGPU" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_iGPU"/>
+                        <Button x:Name="BtnPresetLow" Content="BAJO 1GB" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Low"/>
+                        <Button x:Name="BtnPresetMed" Content="MEDIO 2GB ★" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Med"/>
+                        <Button x:Name="BtnPresetHigh" Content="ALTO" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_High"/>
+                        <Button x:Name="BtnPresetUltra" Content="ULTRA" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Ultra"/>
                     </StackPanel>
                 </Grid>
 
@@ -132,9 +187,9 @@
                 <Rectangle Grid.Row="0" VerticalAlignment="Bottom" Height="1" Fill="#33554420" Margin="25,0,25,0"/>
 
                 <!-- BODY: SIDEBAR + CONTENT -->
-                <Grid Grid.Row="1" Margin="25,15,25,15">
+                <Grid Grid.Row="1" Margin="25,12,25,12">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="230"/>
+                        <ColumnDefinition Width="235"/>
                         <ColumnDefinition Width="1"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
@@ -147,14 +202,17 @@
                         <Button x:Name="BtnNavInput" Content="CONTROLES Y JUEGO" Style="{StaticResource NavButtonStyle}" Click="OnNavInput"/>
                         <Button x:Name="BtnNavLogs" Content="TELEMETRÍA Y LOGS" Style="{StaticResource NavButtonStyle}" Click="OnNavLogs"/>
                         <Separator Margin="0,15,0,15" Background="#33554420"/>
-                        <Button Content="SALIR" Style="{StaticResource NavButtonStyle}" Foreground="#A85555" Click="OnQuit"/>
+                        <Button x:Name="BtnNavQuit" Content="SALIR" Style="{StaticResource NavButtonStyle}" Foreground="#A85555" Click="OnQuit"/>
                     </StackPanel>
 
                     <!-- Vertical Separator -->
                     <Rectangle Grid.Column="1" Fill="#33554420"/>
 
-                    <!-- TAB CONTENTS -->
-                    <Grid Grid.Column="2" Margin="25,5,10,5">
+                    <!-- TAB CONTENT HOST (Animated) -->
+                    <Grid x:Name="TabContainerHost" Grid.Column="2" Margin="25,5,10,5">
+                        <Grid.RenderTransform>
+                            <TranslateTransform x:Name="TabTranslateTransform" Y="0"/>
+                        </Grid.RenderTransform>
 
                         <!-- TAB 1: EXPEDITIONS -->
                         <Grid x:Name="TabExpeditions" Visibility="Visible">
@@ -164,10 +222,10 @@
                             </Grid.RowDefinitions>
 
                             <Grid Grid.Row="0" Margin="0,5,0,15">
-                                <TextBlock Text="SELECCIONA TU EXPEDICIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtSelectExpedition" Text="SELECCIONA TU EXPEDICIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0">
-                                    <TextBlock Text="GPU Activa:" FontSize="12" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <ComboBox x:Name="ComboExpeditionGpu" Width="320" SelectionChanged="OnExpeditionGpuChanged"/>
+                                    <TextBlock x:Name="TxtExpeditionGpuLabel" Text="GPU Activa:" FontSize="12" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboExpeditionGpu" Width="330" SelectionChanged="OnExpeditionGpuChanged"/>
                                 </StackPanel>
                             </Grid>
 
@@ -188,8 +246,8 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
                                         <Image Grid.Row="0" Source="Assets/spm_journal_u1_active.png" Stretch="Uniform" Margin="0,5"/>
-                                        <TextBlock Grid.Row="1" Text="PARTE I" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#E5C158" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-                                        <TextBlock Grid.Row="2" Text="DRAKE'S FORTUNE" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#FFF" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtPart1Title" Grid.Row="1" Text="PARTE I" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#E5C158" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                        <TextBlock x:Name="TxtPart1Sub" Grid.Row="2" Text="DRAKE'S FORTUNE" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#FFF" HorizontalAlignment="Center"/>
                                     </Grid>
                                 </Border>
 
@@ -202,8 +260,8 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
                                         <Image Grid.Row="0" Source="Assets/spm_journal_u2.png" Stretch="Uniform" Margin="0,5"/>
-                                        <TextBlock Grid.Row="1" Text="PARTE II" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#C2B294" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-                                        <TextBlock Grid.Row="2" Text="AMONG THIEVES" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#DDD" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtPart2Title" Grid.Row="1" Text="PARTE II" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#C2B294" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                        <TextBlock x:Name="TxtPart2Sub" Grid.Row="2" Text="AMONG THIEVES" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#DDD" HorizontalAlignment="Center"/>
                                     </Grid>
                                 </Border>
 
@@ -216,8 +274,8 @@
                                             <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
                                         <Image Grid.Row="0" Source="Assets/spm_journal_u3.png" Stretch="Uniform" Margin="0,5"/>
-                                        <TextBlock Grid.Row="1" Text="PARTE III" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#C2B294" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-                                        <TextBlock Grid.Row="2" Text="DRAKE'S DECEPTION" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#DDD" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtPart3Title" Grid.Row="1" Text="PARTE III" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#C2B294" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                        <TextBlock x:Name="TxtPart3Sub" Grid.Row="2" Text="DRAKE'S DECEPTION" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#DDD" HorizontalAlignment="Center"/>
                                     </Grid>
                                 </Border>
                             </Grid>
@@ -226,131 +284,131 @@
                         <!-- TAB 2: GRAPHICS & VRAM -->
                         <ScrollViewer x:Name="TabGraphics" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="0,5,15,5">
-                                <TextBlock Text="CONFIGURACIÓN DE GRÁFICOS Y GESTIÓN DE VRAM" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+                                <TextBlock x:Name="TxtGraphicsHeader" Text="CONFIGURACIÓN DE GRÁFICOS Y GESTIÓN DE VRAM" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Tarjeta Gráfica Activa (GPU):" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Selecciona GPU dedicada (RTX) o integrada (CPU)" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtGpuActiveLabel" Text="Tarjeta Gráfica Activa (GPU):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtGpuActiveSub" Text="Selecciona GPU dedicada (RTX) o integrada (CPU)" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboGpu" Grid.Column="1" SelectionChanged="OnGpuChanged"/>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="API Gráfica de Presentación:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="DirectX 11 ofrece Flip-Discard por hardware" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtApiLabel" Text="API Gráfica de Presentación:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtApiSub" Text="DirectX 11 ofrece Flip-Discard; D3D9Ex para hardware modesto" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboApi" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="DirectX 11 (Hardware Flip-Discard)" Tag="dx11"/>
-                                        <ComboBoxItem Content="DirectX 12 (Flip-Model)" Tag="dx12"/>
-                                        <ComboBoxItem Content="Vulkan (Nativo WSI)" Tag="vulkan"/>
-                                        <ComboBoxItem Content="DirectX 9 (D3D9Ex FlipEx Nativo) ★" Tag="dx9" IsSelected="True"/>
+                                        <ComboBoxItem Content="DirectX 11 (Hardware Flip-Discard) ★" Tag="dx11" IsSelected="True"/>
+                                        <ComboBoxItem Content="DirectX 12 (Agilidad Multi-Core)" Tag="dx12"/>
+                                        <ComboBoxItem Content="Vulkan (Presentación Nativa)" Tag="vulkan"/>
+                                        <ComboBoxItem Content="DirectX 9 / 9Ex (Baja Latencia / SPM)" Tag="dx9"/>
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Límite Estricto de VRAM (Cap):" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Evita saturación de bus y caídas de FPS" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtVramCapLabel" Text="Límite Estricto de VRAM (Cap):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtVramCapSub" Text="Evita saturación de bus y caídas de FPS" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboVramCap" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="820 MB (Objetivo 1 GB VRAM)" Tag="820"/>
-                                        <ComboBoxItem Content="1720 MB (Objetivo 2 GB VRAM)" Tag="1720"/>
-                                        <ComboBoxItem Content="3200 MB (Objetivo 4 GB VRAM)" Tag="3200"/>
-                                        <ComboBoxItem Content="6144 MB (Objetivo 8 GB+ VRAM)" Tag="6144"/>
-                                        <ComboBoxItem Content="Sin límite (Auto) ★" Tag="0" IsSelected="True"/>
+                                        <ComboBoxItem Content="820 MB (Límite Ultra-Bajo / iGPU)" Tag="820"/>
+                                        <ComboBoxItem Content="1720 MB (iGPU Radeon 760M / Integradas) ★" Tag="1720" IsSelected="True"/>
+                                        <ComboBoxItem Content="3200 MB (GPUs 3GB-4GB)" Tag="3200"/>
+                                        <ComboBoxItem Content="6144 MB (GPUs 6GB+)" Tag="6144"/>
+                                        <ComboBoxItem Content="Sin Límite / Desactivado (0 MB)" Tag="0"/>
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Calidad de Texturas:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Ajuste de mipmaps y LOD Bias" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtTexQualityLabel" Text="Calidad de Texturas:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtTexQualitySub" Text="Compresión GPU y streaming adaptativo" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboTexQuality" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="Baja (Ahorro máximo VRAM)" Tag="low"/>
-                                        <ComboBoxItem Content="Media (Recomendado 2GB) ★" Tag="medium" IsSelected="True"/>
-                                        <ComboBoxItem Content="Alta" Tag="high"/>
-                                        <ComboBoxItem Content="Ultra (Resolución Completa)" Tag="ultra"/>
+                                        <ComboBoxItem Content="Bajo (Compresión BC1/BC3 / 820MB Cap)" Tag="low"/>
+                                        <ComboBoxItem Content="Medio (Equilibrio Texturas 1080p) ★" Tag="medium" IsSelected="True"/>
+                                        <ComboBoxItem Content="Alto (Máximo Detalle)" Tag="high"/>
+                                        <ComboBoxItem Content="Ultra (Sin compresión de mipmaps)" Tag="ultra"/>
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Calidad de Sombras:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Resolución de cascadas solares y luces" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtShadowQualityLabel" Text="Calidad de Sombras:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtShadowQualitySub" Text="Resolución de cascadas y filtrado solar" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboShadowQuality" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="Baja (32 taps / -VRAM)" Tag="low"/>
-                                        <ComboBoxItem Content="Media ★" Tag="medium" IsSelected="True"/>
-                                        <ComboBoxItem Content="Alta" Tag="high"/>
-                                        <ComboBoxItem Content="Ultra" Tag="ultra"/>
+                                        <ComboBoxItem Content="Bajo (Mapas de sombra reducidos / 32 taps)" Tag="low"/>
+                                        <ComboBoxItem Content="Medio (Cascadas estándar 1024x1024) ★" Tag="medium" IsSelected="True"/>
+                                        <ComboBoxItem Content="Alto (Sombras nítidas 2048x2048)" Tag="high"/>
+                                        <ComboBoxItem Content="Ultra (Sombras de estudio 4096)" Tag="ultra"/>
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Sombras Dinámicas:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Desactivar elimina pases de sombra solares (+FPS)" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtDynamicShadowsLabel" Text="Sombras Dinámicas:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtDynamicShadowsSub" Text="Desactivar elimina pases de sombra (+FPS masivo)" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboDynamicShadows" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="Activadas (Iluminación Completa) ★" Tag="1" IsSelected="True"/>
-                                        <ComboBoxItem Content="Desactivadas (Máximo Rendimiento / iGPU)" Tag="0"/>
+                                        <ComboBoxItem Content="Desactivadas (Elimina pases solares / Máximo Rendimiento)" Tag="0"/>
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Distancia de Renderizado (LOD):" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Escala de detalle de geometría y distancias de dibujado" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtViewDistanceLabel" Text="Distancia de Renderizado (LOD):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtViewDistanceSub" Text="Escala de detalle con anti-popping exponencial" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboViewDistance" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="Muy baja (50% distancia)" Tag="very_low"/>
-                                        <ComboBoxItem Content="Baja (75% distancia)" Tag="low"/>
-                                        <ComboBoxItem Content="Media (100% estándar) ★" Tag="medium" IsSelected="True"/>
-                                        <ComboBoxItem Content="Alta (125% distancia)" Tag="high"/>
-                                        <ComboBoxItem Content="Ultra (150% distancia máxima)" Tag="ultra"/>
-                                        <ComboBoxItem Content="Automática (Adaptativa según VRAM)" Tag="auto"/>
+                                        <ComboBoxItem Content="Muy Baja (50m - Ahorro extremo CPU/GPU)" Tag="very_low"/>
+                                        <ComboBoxItem Content="Baja (75m - Recomendado 820MB / iGPU)" Tag="low"/>
+                                        <ComboBoxItem Content="Media (100m - Estándar Original) ★" Tag="medium" IsSelected="True"/>
+                                        <ComboBoxItem Content="Alta (125m - Mayor visibilidad lejana)" Tag="high"/>
+                                        <ComboBoxItem Content="Ultra (150m - Visión máxima sin niebla)" Tag="ultra"/>
+                                        <ComboBoxItem Content="Automática (Dinámica según tasa de FPS)" Tag="auto"/>
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Oclusión Ambiental (SSAO):" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Sombreado de esquinas y profundidad" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtSsaoLabel" Text="Oclusión Ambiental (SSAO):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtSsaoSub" Text="Sombreado de esquinas y profundidad" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboSsao" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="Desactivado" Tag="off"/>
@@ -359,14 +417,14 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Filtrado Anisótropo:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Nitidez en texturas con ángulo de cámara" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtAnisoLabel" Text="Filtrado Anisótropo:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtAnisoSub" Text="Nitidez en texturas con ángulo de cámara" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboAniso" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="1x (Bilineal)" Tag="1"/>
@@ -385,16 +443,16 @@
                         <!-- TAB 3: DISPLAY & SCALING -->
                         <ScrollViewer x:Name="TabDisplay" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="0,5,15,5">
-                                <TextBlock Text="RESOLUCIÓN, ESCALADO Y SINCRONIZACIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+                                <TextBlock x:Name="TxtDisplayHeader" Text="RESOLUCIÓN, ESCALADO Y SINCRONIZACIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Resolución de Renderizado:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Tamaño del búfer interno del motor" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtResLabel" Text="Resolución de Renderizado:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtResSub" Text="Tamaño del búfer interno del motor" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboResolution" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="1280x720 (720p HD)" Tag="1280x720"/>
@@ -405,14 +463,14 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Tecnología de Escalado (Upscaler):" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Fidelidad visual con ahorro de cálculo" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtUpscalerLabel" Text="Tecnología de Escalado (Upscaler):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtUpscalerSub" Text="Fidelidad visual con ahorro de cálculo" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboUpscaler" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="Desactivado (Nativo) ★" Tag="off" IsSelected="True"/>
@@ -422,14 +480,14 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Límite de Fotogramas (FPS):" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Tope de tasa de refresco" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtFpsLimitLabel" Text="Límite de Fotogramas (FPS):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtFpsLimitSub" Text="Tope de tasa de refresco" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboFpsLimit" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="30 FPS (Modo Batería)" Tag="30"/>
@@ -440,14 +498,14 @@
                                     </ComboBox>
                                 </Grid>
 
-                                <Grid Margin="0,8">
+                                <Grid Margin="0,7">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="260"/>
-                                        <ColumnDefinition Width="340"/>
+                                        <ColumnDefinition Width="270"/>
+                                        <ColumnDefinition Width="360"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Temporizador / Frame Pacer:" FontWeight="Bold" Foreground="#FFF"/>
-                                        <TextBlock Text="Estabilidad y precisión submilisegundo" FontSize="11" Foreground="#888"/>
+                                        <TextBlock x:Name="TxtFramePacerLabel" Text="Temporizador / Frame Pacer:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock x:Name="TxtFramePacerSub" Text="Estabilidad y precisión submilisegundo" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboFramePacer" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="Hybrid Sub-ms Pacer (Recomendado) ★" Tag="hybrid" IsSelected="True"/>
@@ -463,30 +521,171 @@
                             </StackPanel>
                         </ScrollViewer>
 
-                        <!-- TAB 4: INPUT & CONTROLS -->
+                        <!-- TAB 4: INPUT & CONTROLS (EXPENSIVE, UNRESTRICTED) -->
                         <ScrollViewer x:Name="TabInput" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                            <StackPanel Margin="0,5,15,5">
-                                <TextBlock Text="CONTROLES, RATÓN Y DIRECTORIO DE JUEGO" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+                            <StackPanel Margin="0,5,15,10">
+                                <TextBlock x:Name="TxtControlsHeader" Text="MAPEO EXTENSO DE CONTROLES, RATÓN Y MANDO" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,12"/>
 
-                                <TextBlock Text="Directorio de Archivos del Juego (CUSA02344):" FontWeight="Bold" Foreground="#FFF" Margin="0,8,0,2"/>
+                                <!-- Game Directory Row -->
+                                <TextBlock x:Name="TxtGameDirLabel" Text="Directorio de Archivos del Juego (CUSA02344):" FontWeight="Bold" Foreground="#FFF" Margin="0,2,0,4"/>
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="130"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="TxtGameDir" Grid.Column="0" Text="D:\D'Arby\Uncharted Game\CUSA02344" Background="#161920" Foreground="#E5C158" BorderBrush="#554420" Padding="8,6" TextChanged="OnGameDirChanged"/>
-                                    <Button Grid.Column="1" Content="BUSCAR..." Margin="8,0,0,0" Style="{StaticResource PresetButtonStyle}" Click="OnBrowseGameDir"/>
+                                    <Button x:Name="BtnBrowse" Grid.Column="1" Content="BUSCAR..." Margin="8,0,0,0" Style="{StaticResource PresetButtonStyle}" Click="OnBrowseGameDir"/>
                                 </Grid>
 
-                                <TextBlock Text="Sensibilidad de Apuntado con Ratón:" FontWeight="Bold" Foreground="#FFF" Margin="0,8,0,2"/>
-                                <Grid Margin="0,0,0,15">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="60"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Slider x:Name="SliderMouseSens" Grid.Column="0" Minimum="0.5" Maximum="10.0" Value="3.0" TickFrequency="0.5" IsSnapToTickEnabled="True" ValueChanged="OnMouseSensChanged"/>
-                                    <TextBlock x:Name="TxtMouseSensVal" Grid.Column="1" Text="3.0x" Foreground="#E5C158" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <!-- Mouse & Gamepad Sensitivities Container -->
+                                <Border Background="#12151C" BorderBrush="#33554420" BorderThickness="1" CornerRadius="6" Padding="15,12" Margin="0,0,0,15">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="20"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- LEFT: MOUSE OPTIONS -->
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock x:Name="TxtMouseSectionHeader" Text="RATÓN Y PRECISIÓN DE APUNTADO" FontWeight="Bold" Foreground="#E5C158" FontSize="13" Margin="0,0,0,10"/>
+
+                                            <!-- Sens General -->
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="160"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="45"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="TxtMouseSensLabel" Text="Sensibilidad General:" Foreground="#DDD" VerticalAlignment="Center"/>
+                                                <Slider x:Name="SliderMouseSens" Grid.Column="1" Minimum="0.5" Maximum="10.0" Value="3.0" TickFrequency="0.1" ValueChanged="OnMouseSensChanged" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TxtMouseSensVal" Grid.Column="2" Text="3.0x" Foreground="#E5C158" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                            <!-- Sens Aim -->
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="160"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="45"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="TxtMouseAimSensLabel" Text="Sensibilidad Apuntado:" Foreground="#DDD" VerticalAlignment="Center"/>
+                                                <Slider x:Name="SliderMouseAimSens" Grid.Column="1" Minimum="0.1" Maximum="5.0" Value="1.0" TickFrequency="0.1" ValueChanged="OnMouseAimSensChanged" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TxtMouseAimSensVal" Grid.Column="2" Text="1.0x" Foreground="#E5C158" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                            <!-- Sens Vert -->
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="160"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="45"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="TxtMouseVertLabel" Text="Sensibilidad Vertical:" Foreground="#DDD" VerticalAlignment="Center"/>
+                                                <Slider x:Name="SliderMouseVert" Grid.Column="1" Minimum="0.1" Maximum="3.0" Value="1.0" TickFrequency="0.1" ValueChanged="OnMouseVertChanged" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TxtMouseVertVal" Grid.Column="2" Text="1.0x" Foreground="#E5C158" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <CheckBox x:Name="ChkInvertY" Content="Invertir Eje Y (Arriba/Abajo)" Foreground="#CCC" Margin="0,0,15,0" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                                                <CheckBox x:Name="ChkInvertX" Content="Invertir Eje X" Foreground="#CCC" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- RIGHT: GAMEPAD & PROMPTS -->
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock x:Name="TxtGamepadSectionHeader" Text="MANDO, HÁPTICA Y GLIFOS" FontWeight="Bold" Foreground="#E5C158" FontSize="13" Margin="0,0,0,10"/>
+
+                                            <!-- Stick Speed -->
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="45"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="TxtStickSpeedLabel" Text="Velocidad Palancas:" Foreground="#DDD" VerticalAlignment="Center"/>
+                                                <Slider x:Name="SliderStickSpeed" Grid.Column="1" Minimum="0.5" Maximum="3.0" Value="1.0" TickFrequency="0.1" ValueChanged="OnStickSpeedChanged" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TxtStickSpeedVal" Grid.Column="2" Text="1.0x" Foreground="#E5C158" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+
+                                            <!-- Prompts Glyph Selection -->
+                                            <Grid Margin="0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="TxtPromptsLabel" Text="Iconos de Botones:" Foreground="#DDD" VerticalAlignment="Center"/>
+                                                <ComboBox x:Name="ComboPrompts" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                                    <ComboBoxItem Content="Automático (Detectado) ★" Tag="auto" IsSelected="True"/>
+                                                    <ComboBoxItem Content="PlayStation (△ ○ ✕ □)" Tag="ps"/>
+                                                    <ComboBoxItem Content="Xbox (Y B A X)" Tag="xbox"/>
+                                                    <ComboBoxItem Content="Teclado y Ratón (PC)" Tag="kb"/>
+                                                </ComboBox>
+                                            </Grid>
+
+                                            <CheckBox x:Name="ChkVibration" Content="Vibración de Mando (Rumble Háptico)" Foreground="#CCC" Margin="0,8,0,0" IsChecked="True" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- REBINDING TABLE HEADER -->
+                                <Grid Margin="0,5,0,8">
+                                    <StackPanel>
+                                        <TextBlock x:Name="TxtKeybindsHeader" Text="ASIGNACIÓN LIBRE DE TECLAS Y RATÓN" FontFamily="Cinzel, Georgia, serif" FontSize="14" FontWeight="SemiBold" Foreground="#E5C158"/>
+                                        <TextBlock x:Name="TxtKeybindsSub" Text="Haz clic en cualquier tecla para cambiar su asignación libremente sin restricciones." FontSize="11" Foreground="#888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="TxtControlSavedNotice" Text="✓ Configuración de controles guardada permanentemente" Foreground="#95D187" FontWeight="Bold" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 </Grid>
+
+                                <!-- REBINDING ITEMS LIST -->
+                                <Border Background="#12151C" BorderBrush="#33554420" BorderThickness="1" CornerRadius="6" Padding="10">
+                                    <StackPanel>
+                                        <!-- Table Header Row -->
+                                        <Grid Margin="5,0,5,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="220"/>
+                                                <ColumnDefinition Width="170"/>
+                                                <ColumnDefinition Width="170"/>
+                                                <ColumnDefinition Width="150"/>
+                                                <ColumnDefinition Width="40"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="ACCIÓN / FUNCIÓN" FontWeight="Bold" Foreground="#888" FontSize="11"/>
+                                            <TextBlock Grid.Column="1" Text="TECLA PRIMARIA" FontWeight="Bold" Foreground="#888" FontSize="11" HorizontalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" Text="TECLA SEC. / RATÓN" FontWeight="Bold" Foreground="#888" FontSize="11" HorizontalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3" Text="MANDO / GAMEPAD" FontWeight="Bold" Foreground="#888" FontSize="11" HorizontalAlignment="Center"/>
+                                            <TextBlock Grid.Column="4" Text="" HorizontalAlignment="Center"/>
+                                        </Grid>
+                                        <Separator Background="#33554420" Margin="0,0,0,6"/>
+
+                                        <!-- Bindings Container -->
+                                        <ItemsControl x:Name="ItemsBindings">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="5,3">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="220"/>
+                                                            <ColumnDefinition Width="170"/>
+                                                            <ColumnDefinition Width="170"/>
+                                                            <ColumnDefinition Width="150"/>
+                                                            <ColumnDefinition Width="40"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding FallbackLabel}" Foreground="#FFF" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        <Button Grid.Column="1" Content="{Binding PrimaryKey}" Margin="4,0" Style="{StaticResource KeybindButtonStyle}" Tag="{Binding}" Click="OnPrimaryBindClick"/>
+                                                        <Button Grid.Column="2" Content="{Binding SecondaryKeyOrMouse}" Margin="4,0" Style="{StaticResource KeybindButtonStyle}" Tag="{Binding}" Click="OnSecondaryBindClick"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding GamepadLabel}" Foreground="#C2B294" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                        <Button Grid.Column="4" Content="✕" Foreground="#888" Background="Transparent" BorderThickness="0" Cursor="Hand" Tag="{Binding}" Click="OnClearBindingClick" ToolTip="Quitar tecla asignada" HorizontalAlignment="Center"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Bottom Control Action Buttons -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,5">
+                                    <Button x:Name="BtnResetControls" Content="RESTABLECER CONTROLES PREDETERMINADOS" Style="{StaticResource PresetButtonStyle}" Margin="0,0,10,0" Padding="14,8" Click="OnResetControlsClicked"/>
+                                    <Button x:Name="BtnSaveControls" Content="GUARDAR CONTROLES" Style="{StaticResource PlayButtonStyle}" FontSize="13" Padding="20,8" Click="OnSaveControlsClicked"/>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
 
@@ -498,13 +697,13 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="REGISTRO Y TELEMETRÍA EN TIEMPO REAL" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,5,0,10"/>
+                            <TextBlock x:Name="TxtTelemetryHeader" Grid.Row="0" Text="REGISTRO Y TELEMETRÍA EN TIEMPO REAL" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,5,0,10"/>
 
                             <TextBox x:Name="TxtConsole" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="#090B0E" Foreground="#95D187" FontFamily="Consolas, monospace" FontSize="12" Padding="10" BorderBrush="#33554420"/>
 
                             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-                                <Button Content="VERIFICAR ARCHIVOS (1.02)" Style="{StaticResource PresetButtonStyle}" Click="OnVerifyFiles"/>
-                                <Button Content="LIMPIAR CONSOLA" Style="{StaticResource PresetButtonStyle}" Click="OnClearConsole"/>
+                                <Button x:Name="BtnVerifyFiles" Content="VERIFICAR ARCHIVOS (1.02)" Style="{StaticResource PresetButtonStyle}" Click="OnVerifyFiles"/>
+                                <Button x:Name="BtnClearConsole" Content="LIMPIAR CONSOLA" Style="{StaticResource PresetButtonStyle}" Click="OnClearConsole"/>
                             </StackPanel>
                         </Grid>
 

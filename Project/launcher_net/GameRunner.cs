@@ -20,7 +20,7 @@ public class GameRunner
         if (IsRunning) return false;
 
         config.SyncToIniFiles(workspaceRoot);
-        config.Save();
+        config.Save(workspaceRoot);
 
         NativeBridge.InitTimerResolution();
 
@@ -105,6 +105,20 @@ public class GameRunner
         psi.Environment["UNCHARTED_NO_MOTION_BLUR"] = config.MotionBlur ? "0" : "1";
         psi.Environment["UNCHARTED_NO_DOF"] = config.DepthOfField ? "0" : "1";
         psi.Environment["UNCHARTED_DIAGNOSTICS"] = config.Diagnostics ? "1" : "0";
+
+        // Controls & Input variables
+        psi.Environment["GOW3_MOUSE"] = "1";
+        psi.Environment["GOW3_MOUSE_SENS"] = config.MouseSensitivity.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        psi.Environment["GOW3_MOUSE_AIM_SENS"] = config.MouseAimSensitivity.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        psi.Environment["GOW3_MOUSE_VERTICAL"] = config.MouseVerticalSensitivity.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        psi.Environment["GOW3_MOUSE_INVERT"] = config.MouseInvertY ? "1" : "0";
+        psi.Environment["GOW3_MOUSE_INVERT_X"] = config.MouseInvertX ? "1" : "0";
+        psi.Environment["GOW3_STICK_SPEED"] = config.StickSpeed.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        psi.Environment["GOW3_VIBRATION"] = config.Vibration ? "1" : "0";
+        psi.Environment["GOW3_PROMPTS"] = config.Prompts;
+        if (!string.IsNullOrEmpty(config.KeyMap)) psi.Environment["GOW3_KEY_MAP"] = config.KeyMap;
+        if (!string.IsNullOrEmpty(config.PadMap)) psi.Environment["GOW3_PAD_MAP"] = config.PadMap;
+        if (!string.IsNullOrEmpty(config.MouseMap)) psi.Environment["GOW3_MOUSE_MAP"] = config.MouseMap;
 
         try
         {
