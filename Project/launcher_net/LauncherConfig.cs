@@ -34,6 +34,21 @@ public class LauncherConfig
     [JsonPropertyName("gpu_id")]
     public string GpuId { get; set; } = "-1";
 
+    [JsonPropertyName("dynamic_shadows")]
+    public string DynamicShadows { get; set; } = "1"; // 1 = on, 0 = off
+
+    [JsonPropertyName("view_distance")]
+    public string ViewDistance { get; set; } = "medium"; // very_low, low, medium, high, ultra, auto
+
+    [JsonPropertyName("key_map")]
+    public string KeyMap { get; set; } = "ls_up=W,ls_down=S,ls_left=A,ls_right=D,rs_up=Up,rs_down=Down,rs_left=Left,rs_right=Right,left=1,right=2,up=3,down=4,cross=Space,circle=Left Ctrl,square=F,triangle=R,l2=,r2=,l1=Q,r1=E,l3=Left Shift,r3=V,options=Escape,options=Return,touchpad_left=Tab,touchpad_right=Backspace";
+
+    [JsonPropertyName("pad_map")]
+    public string PadMap { get; set; } = "left=dpleft,right=dpright,up=dpup,down=dpdown,cross=a,circle=b,square=x,triangle=y,l1=leftshoulder,r1=rightshoulder,l3=leftstick,r3=rightstick,options=start,touchpad_right=back";
+
+    [JsonPropertyName("mouse_map")]
+    public string MouseMap { get; set; } = "left=wheel_down,right=wheel_up,up=,down=,cross=,circle=,square=,triangle=,l2=right,r2=left,l1=x1,r1=x2,l3=,r3=middle,options=,touchpad_left=,touchpad_right=";
+
     private static string ConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Uncharted Launcher",
@@ -101,6 +116,27 @@ public class LauncherConfig
                 SetVal("ssao_quality", SsaoQuality);
                 SetVal("anisotropy", Anisotropy);
                 SetVal("upscaler", Upscaler);
+                SetVal("dynamic_shadows", DynamicShadows);
+                SetVal("view_distance", ViewDistance);
+                if (DynamicShadows == "0") {
+                    SetVal("sun_shadow_distance", "0");
+                    SetVal("light_shadow_distance", "0");
+                } else if (ShadowQuality == "low") {
+                    SetVal("sun_shadow_distance", "50");
+                    SetVal("light_shadow_distance", "50");
+                } else {
+                    SetVal("sun_shadow_distance", "100");
+                    SetVal("light_shadow_distance", "100");
+                }
+                if (ViewDistance == "very_low") SetVal("fade_distance", "50");
+                else if (ViewDistance == "low") SetVal("fade_distance", "75");
+                else if (ViewDistance == "medium") SetVal("fade_distance", "100");
+                else if (ViewDistance == "high") SetVal("fade_distance", "125");
+                else if (ViewDistance == "ultra") SetVal("fade_distance", "150");
+                else if (ViewDistance == "auto") SetVal("fade_distance", "75");
+                if (!string.IsNullOrEmpty(KeyMap)) SetVal("key_map", KeyMap);
+                if (!string.IsNullOrEmpty(PadMap)) SetVal("pad_map", PadMap);
+                if (!string.IsNullOrEmpty(MouseMap)) SetVal("mouse_map", MouseMap);
 
                 File.WriteAllLines(iniPath, lines);
             }
@@ -132,8 +168,29 @@ public class LauncherConfig
                 SetEpVal("upscaler", Upscaler);
                 SetEpVal("deferred_readback", "1");
                 SetEpVal("stale_readback", "0");
+                SetEpVal("dynamic_shadows", DynamicShadows);
+                SetEpVal("view_distance", ViewDistance);
+                if (DynamicShadows == "0") {
+                    SetEpVal("sun_shadow_distance", "0");
+                    SetEpVal("light_shadow_distance", "0");
+                } else if (ShadowQuality == "low") {
+                    SetEpVal("sun_shadow_distance", "50");
+                    SetEpVal("light_shadow_distance", "50");
+                } else {
+                    SetEpVal("sun_shadow_distance", "100");
+                    SetEpVal("light_shadow_distance", "100");
+                }
+                if (ViewDistance == "very_low") SetEpVal("fade_distance", "50");
+                else if (ViewDistance == "low") SetEpVal("fade_distance", "75");
+                else if (ViewDistance == "medium") SetEpVal("fade_distance", "100");
+                else if (ViewDistance == "high") SetEpVal("fade_distance", "125");
+                else if (ViewDistance == "ultra") SetEpVal("fade_distance", "150");
+                else if (ViewDistance == "auto") SetEpVal("fade_distance", "75");
                 if (!string.IsNullOrEmpty(GpuName)) SetEpVal("gpu_name", GpuName);
                 if (!string.IsNullOrEmpty(GpuId)) SetEpVal("gpu_id", GpuId);
+                if (!string.IsNullOrEmpty(KeyMap)) SetEpVal("key_map", KeyMap);
+                if (!string.IsNullOrEmpty(PadMap)) SetEpVal("pad_map", PadMap);
+                if (!string.IsNullOrEmpty(MouseMap)) SetEpVal("mouse_map", MouseMap);
 
                 var dir = Path.GetDirectoryName(ep);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);

@@ -265,6 +265,10 @@ INI_DEFAULTS = {
     "rcas_strength": "75",
     "show_fps": "1",
     "upscaler": "off",
+    "dynamic_shadows": "1",
+    "view_distance": "medium",
+    "texture_quality": "medium",
+    "shadow_quality": "medium",
     "fade_distance": "100",
     "sun_shadow_distance": "100",
     "light_shadow_distance": "100",
@@ -1918,6 +1922,10 @@ class Launcher:
             "frame_pacer": normalize_frame_pacer(self.config.get("frame_pacing_mode", "hybrid")),
             "deferred_readback": "1",
             "stale_readback": "0",
+            "dynamic_shadows": str(self.config.get("dynamic_shadows", "1")),
+            "view_distance": str(self.config.get("view_distance", "medium")),
+            "texture_quality": str(self.config.get("texture_quality", "medium")),
+            "shadow_quality": str(self.config.get("shadow_quality", "medium")),
         }
         for game in GAME_KEYS:
             write_ini(game, shared)
@@ -3906,6 +3914,28 @@ class Launcher:
         env["GOW3_TEXTURE_QUALITY"] = str(tex_q)
         env["GOW3_SHADOW_QUALITY"] = str(shad_q)
         env["GOW3_SSAO_QUALITY"] = str(self.config.get("ssao_quality", "full"))
+        dyn_shadows = str(self.config.get("dynamic_shadows", "1"))
+        env["GOW3_DYNAMIC_SHADOWS"] = dyn_shadows
+        view_dist = str(self.config.get("view_distance", "medium"))
+        env["GOW3_VIEW_DISTANCE"] = view_dist
+        if dyn_shadows == "0":
+            env["GOW3_SUN_SHADOW_DISTANCE"] = "0"
+            env["GOW3_LIGHT_SHADOW_DISTANCE"] = "0"
+        elif shad_q == "low":
+            env["GOW3_SUN_SHADOW_DISTANCE"] = "50"
+            env["GOW3_LIGHT_SHADOW_DISTANCE"] = "50"
+        if view_dist == "very_low":
+            env["GOW3_FADE_DISTANCE"] = "50"
+        elif view_dist == "low":
+            env["GOW3_FADE_DISTANCE"] = "75"
+        elif view_dist == "medium":
+            env["GOW3_FADE_DISTANCE"] = "100"
+        elif view_dist == "high":
+            env["GOW3_FADE_DISTANCE"] = "125"
+        elif view_dist == "ultra":
+            env["GOW3_FADE_DISTANCE"] = "150"
+        elif view_dist == "auto":
+            env["GOW3_FADE_DISTANCE"] = "75"
 
         try:
             vram_int = int(vram_cap)

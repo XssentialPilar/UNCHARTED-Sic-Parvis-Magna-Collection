@@ -9,6 +9,8 @@
 #include "core/memory.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+
+extern "C" int gow3gpu_settings_texture_quality(void);
 #include "video_core/texture_cache/sampler.h"
 
 namespace VideoCore {
@@ -30,7 +32,10 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
     // LUTs, render targets, and shadow compare samplers untouched.
     static const float global_mip_lod_bias = [] {
         const char* env = std::getenv("GOW3_MIP_LOD_BIAS");
-        const float value = env && env[0] ? static_cast<float>(std::atof(env)) : 0.0f;
+        float value = env && env[0] ? static_cast<float>(std::atof(env)) : 0.0f;
+        if (gow3gpu_settings_texture_quality() == 0 && value < 1.0f) {
+            value = 1.0f;
+        }
         if (value != 0.0f) {
             std::printf("GPU: Global world texture Mip LOD bias %.2f active (GOW3_MIP_LOD_BIAS)\n",
                         value);

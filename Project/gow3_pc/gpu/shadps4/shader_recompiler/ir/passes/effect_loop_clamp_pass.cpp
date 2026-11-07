@@ -17,6 +17,8 @@
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 
+extern "C" int gow3gpu_settings_shadow_quality(void);
+
 namespace Shader::Optimization {
 
 // gow3 1 Nov 2026 (Uncharted 3 chapter 2 device lost, GitHub #292 #295 #238;
@@ -219,7 +221,14 @@ static u32 ClampShadowTapLoops(IR::Program& program) {
             }
             IR::IREmitter ir{*inst.GetParent(),
                              std::next(IR::Block::InstructionList::s_iterator_to(inst))};
-            const IR::U32 bound = ir.IMin(IR::U32{&inst}, ir.Imm32(MaxShadowTaps), false);
+            u32 tap_limit = MaxShadowTaps;
+            const int shad_q = gow3gpu_settings_shadow_quality();
+            if (shad_q == 0) {
+                tap_limit = 32;
+            } else if (shad_q == 1) {
+                tap_limit = 64;
+            }
+            const IR::U32 bound = ir.IMin(IR::U32{&inst}, ir.Imm32(tap_limit), false);
             for (const IR::Use& use : compares) {
                 use.user->SetArg(use.operand, bound);
             }

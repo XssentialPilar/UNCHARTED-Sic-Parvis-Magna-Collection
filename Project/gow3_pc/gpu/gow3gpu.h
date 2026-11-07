@@ -110,6 +110,10 @@ float gow3gpu_controls_stick_speed(void);
 int gow3gpu_settings_fade_distance(void);
 int gow3gpu_settings_sun_shadow_distance(void);
 int gow3gpu_settings_light_shadow_distance(void);
+int gow3gpu_settings_texture_quality(void);
+int gow3gpu_settings_shadow_quality(void);
+int gow3gpu_settings_dynamic_shadows(void);
+int gow3gpu_settings_view_distance_mode(void);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned gow3gpu_symbol_count(void);
 #ifdef __cplusplus

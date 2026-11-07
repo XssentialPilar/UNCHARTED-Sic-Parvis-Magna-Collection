@@ -56,6 +56,8 @@ public partial class MainWindow : Window
         SetComboByTag(ComboVramCap, _config.VramBudgetMb);
         SetComboByTag(ComboTexQuality, _config.TextureQuality);
         SetComboByTag(ComboShadowQuality, _config.ShadowQuality);
+        SetComboByTag(ComboDynamicShadows, _config.DynamicShadows);
+        SetComboByTag(ComboViewDistance, _config.ViewDistance);
         SetComboByTag(ComboSsao, _config.SsaoQuality);
         SetComboByTag(ComboAniso, _config.Anisotropy);
         SetComboByTag(ComboResolution, _config.Resolution);
@@ -82,6 +84,8 @@ public partial class MainWindow : Window
         _config.VramBudgetMb = GetComboTag(ComboVramCap, "1720");
         _config.TextureQuality = GetComboTag(ComboTexQuality, "medium");
         _config.ShadowQuality = GetComboTag(ComboShadowQuality, "medium");
+        _config.DynamicShadows = GetComboTag(ComboDynamicShadows, "1");
+        _config.ViewDistance = GetComboTag(ComboViewDistance, "medium");
         _config.SsaoQuality = GetComboTag(ComboSsao, "full");
         _config.Anisotropy = GetComboTag(ComboAniso, "16");
         _config.Resolution = GetComboTag(ComboResolution, "1920x1080");
@@ -124,11 +128,7 @@ public partial class MainWindow : Window
         string capText = _config.VramBudgetMb == "0" ? "Sin Cap" : $"{_config.VramBudgetMb} MB Cap";
         string gpuShort = !string.IsNullOrEmpty(_config.GpuName) ? (_config.GpuName.Contains("760M") ? "AMD 760M (CPU)" : "RTX 5050") : "Auto GPU";
         TxtFooterDetails.Text = $"{gpuShort} • {_config.GraphicsApi.ToUpper()} • {capText} • {_config.Resolution} • {_config.FpsLimit} FPS • {_config.FramePacingMode} Pacer";
-        if (TxtExpeditionGpuBanner != null)
-        {
-            string gpuDisplay = !string.IsNullOrEmpty(_config.GpuName) ? _config.GpuName : "Auto Detección";
-            TxtExpeditionGpuBanner.Text = $"GPU Activa: {gpuDisplay}";
-        }
+        // Expedition GPU banner replaced by interactive ComboExpeditionGpu
         BtnPlay.Content = $"► JUGAR {(_config.SelectedGame switch { "u1" => "PARTE I", "u2" => "PARTE II", "u3" => "PARTE III", _ => "" })}";
     }
 
@@ -214,12 +214,24 @@ public partial class MainWindow : Window
         SetComboByTag(ComboVramCap, "820");
         SetComboByTag(ComboTexQuality, "low");
         SetComboByTag(ComboShadowQuality, "low");
+        SetComboByTag(ComboDynamicShadows, "0");
+        SetComboByTag(ComboViewDistance, "low");
         SetComboByTag(ComboSsao, "off");
         SetComboByTag(ComboAniso, "2");
         SetComboByTag(ComboResolution, "1280x720");
         SetComboByTag(ComboFpsLimit, "60");
         ChkFullResTex.IsChecked = false;
         ChkHiresShadows.IsChecked = false;
+
+        // Auto-select integrated GPU if available
+        for (int i = 0; i < ComboGpu.Items.Count; i++)
+        {
+            if (ComboGpu.Items[i] is ComboBoxItem item && item.Tag is string tag && tag.Contains("integrated", StringComparison.OrdinalIgnoreCase))
+            {
+                ComboGpu.SelectedIndex = i;
+                break;
+            }
+        }
         SaveUIToConfig();
     }
 
@@ -229,6 +241,8 @@ public partial class MainWindow : Window
         SetComboByTag(ComboVramCap, "820");
         SetComboByTag(ComboTexQuality, "low");
         SetComboByTag(ComboShadowQuality, "low");
+        SetComboByTag(ComboDynamicShadows, "0");
+        SetComboByTag(ComboViewDistance, "low");
         SetComboByTag(ComboSsao, "half");
         SetComboByTag(ComboAniso, "4");
         SetComboByTag(ComboResolution, "1280x720");
@@ -535,14 +549,40 @@ public partial class MainWindow : Window
             }
         }
 
+        ComboExpeditionGpu.Items.Clear();
+        for (int i = 0; i < ComboGpu.Items.Count; i++)
+        {
+            var orig = (ComboBoxItem)ComboGpu.Items[i];
+            ComboExpeditionGpu.Items.Add(new ComboBoxItem { Content = orig.Content, Tag = orig.Tag });
+        }
         if (ComboGpu.Items.Count > 0)
         {
             ComboGpu.SelectedIndex = selectedIndex;
+            ComboExpeditionGpu.SelectedIndex = selectedIndex;
+        }
+    }
+
+    private void OnExpeditionGpuChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        if (ComboExpeditionGpu.SelectedIndex >= 0 && ComboExpeditionGpu.SelectedIndex < ComboGpu.Items.Count)
+        {
+            if (ComboGpu.SelectedIndex != ComboExpeditionGpu.SelectedIndex)
+            {
+                ComboGpu.SelectedIndex = ComboExpeditionGpu.SelectedIndex;
+            }
         }
     }
 
     private void OnGpuChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (ComboExpeditionGpu != null && ComboGpu.SelectedIndex >= 0 && ComboGpu.SelectedIndex < ComboExpeditionGpu.Items.Count)
+        {
+            if (ComboExpeditionGpu.SelectedIndex != ComboGpu.SelectedIndex)
+            {
+                ComboExpeditionGpu.SelectedIndex = ComboGpu.SelectedIndex;
+            }
+        }
         if (!IsLoaded) return;
         if (ComboGpu.SelectedItem is ComboBoxItem item && item.Tag is string tag)
         {

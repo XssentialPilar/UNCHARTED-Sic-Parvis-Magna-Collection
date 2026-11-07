@@ -68,6 +68,24 @@ public class GameRunner
         psi.Environment["GOW3_TEXTURE_QUALITY"] = config.TextureQuality;
         psi.Environment["GOW3_SHADOW_QUALITY"] = config.ShadowQuality;
         psi.Environment["GOW3_SSAO_QUALITY"] = config.SsaoQuality;
+        psi.Environment["GOW3_DYNAMIC_SHADOWS"] = config.DynamicShadows;
+        psi.Environment["GOW3_VIEW_DISTANCE"] = config.ViewDistance;
+        if (config.DynamicShadows == "0") {
+            psi.Environment["GOW3_SUN_SHADOW_DISTANCE"] = "0";
+            psi.Environment["GOW3_LIGHT_SHADOW_DISTANCE"] = "0";
+        } else if (config.ShadowQuality == "low") {
+            psi.Environment["GOW3_SUN_SHADOW_DISTANCE"] = "50";
+            psi.Environment["GOW3_LIGHT_SHADOW_DISTANCE"] = "50";
+        }
+        if (config.ViewDistance == "very_low") psi.Environment["GOW3_FADE_DISTANCE"] = "50";
+        else if (config.ViewDistance == "low") psi.Environment["GOW3_FADE_DISTANCE"] = "75";
+        else if (config.ViewDistance == "medium") psi.Environment["GOW3_FADE_DISTANCE"] = "100";
+        else if (config.ViewDistance == "high") psi.Environment["GOW3_FADE_DISTANCE"] = "125";
+        else if (config.ViewDistance == "ultra") psi.Environment["GOW3_FADE_DISTANCE"] = "150";
+        else if (config.ViewDistance == "auto") psi.Environment["GOW3_FADE_DISTANCE"] = "75";
+        if (!string.IsNullOrEmpty(config.GpuId) && config.GpuId != "-1") {
+            psi.Environment["VK_DEVICE_INDEX"] = config.GpuId;
+        }
         psi.Environment["UNCHARTED_ANISOTROPY"] = config.Anisotropy;
         psi.Environment["UNCHARTED_RESOLUTION"] = config.Resolution;
         if (!string.IsNullOrWhiteSpace(config.OutputResolution))

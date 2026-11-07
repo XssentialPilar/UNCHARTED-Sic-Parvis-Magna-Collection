@@ -15,6 +15,7 @@
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
 #include "gow3_toggles.h"
+#include "gow3_settings.h"
 #include "gow3_watch_range.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
@@ -2461,8 +2462,12 @@ static bool JitterFullScreenPass(u64 hash) {
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw* used_prepared,
                             bool is_indexed, u32 index_offset) {
     const auto* fragment=pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+    const u64 frag_hash = fragment ? fragment->pgm_hash : 0;
+    if (!Gow3Settings::Get().dynamic_shadows && (frag_hash == 0xf614041e || frag_hash == 0x689d1af9)) {
+        return;
+    }
     if (SkippedShader(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
-                      fragment ? fragment->pgm_hash : 0,
+                      frag_hash,
                       is_indexed ? Regs().index_base_address.Address<VAddr>() : 0)) {
         return;
     }

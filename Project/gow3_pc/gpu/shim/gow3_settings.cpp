@@ -128,6 +128,55 @@ void Set(Values& v, const std::string& key, const std::string& value) {
                                                                     : 0;
         return;
     }
+    if (key == "texture_quality") {
+        v.texture_quality = (value == "low" || value == "0") ? 0
+                          : (value == "high" || value == "2") ? 2
+                          : (value == "ultra" || value == "3") ? 3
+                          : 1;
+        return;
+    }
+    if (key == "shadow_quality") {
+        v.shadow_quality = (value == "low" || value == "0") ? 0
+                         : (value == "high" || value == "2") ? 2
+                         : (value == "ultra" || value == "3") ? 3
+                         : 1;
+        return;
+    }
+    if (key == "dynamic_shadows") {
+        v.dynamic_shadows = !(value == "0" || value == "false" || value == "off");
+        return;
+    }
+    if (key == "view_distance") {
+        if (value == "very_low" || value == "0" || value == "50") {
+            v.view_distance_mode = 0;
+            v.fade_distance = 50;
+            v.sun_shadow_distance = 50;
+            v.light_shadow_distance = 50;
+        } else if (value == "low" || value == "1" || value == "75") {
+            v.view_distance_mode = 1;
+            v.fade_distance = 75;
+            v.sun_shadow_distance = 75;
+            v.light_shadow_distance = 75;
+        } else if (value == "medium" || value == "2" || value == "100") {
+            v.view_distance_mode = 2;
+            v.fade_distance = 100;
+            v.sun_shadow_distance = 100;
+            v.light_shadow_distance = 100;
+        } else if (value == "high" || value == "3" || value == "125") {
+            v.view_distance_mode = 3;
+            v.fade_distance = 125;
+            v.sun_shadow_distance = 125;
+            v.light_shadow_distance = 125;
+        } else if (value == "ultra" || value == "4" || value == "150") {
+            v.view_distance_mode = 4;
+            v.fade_distance = 150;
+            v.sun_shadow_distance = 150;
+            v.light_shadow_distance = 150;
+        } else if (value == "auto" || value == "5") {
+            v.view_distance_mode = 5;
+        }
+        return;
+    }
     if (key == "menu_shortcut") {
         v.menu_shortcut = value == "view_menu" ? 1 : value == "keyboard" ? 2 : value == "custom" ? 3 : 0;
         return;
@@ -307,6 +356,10 @@ void Load() {
         {"GOW3_FRAME_PACER", "frame_pacer"},          {"GOW3_FADE_DISTANCE", "fade_distance"},
         {"GOW3_SUN_SHADOW_DISTANCE", "sun_shadow_distance"},
         {"GOW3_LIGHT_SHADOW_DISTANCE", "light_shadow_distance"},
+        {"GOW3_TEXTURE_QUALITY", "texture_quality"},
+        {"GOW3_SHADOW_QUALITY", "shadow_quality"},
+        {"GOW3_DYNAMIC_SHADOWS", "dynamic_shadows"},
+        {"GOW3_VIEW_DISTANCE", "view_distance"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -466,6 +519,14 @@ KeyValues Current() {
     Append(text, "graphics_api=%s\nvram_budget_mb=%d\nframe_pacer=%s\n",
            api_names[std::clamp(v.graphics_api.load(), 0, 3)], v.vram_budget_mb.load(),
            pacer_names[std::clamp(v.frame_pacer_mode.load(), 0, 3)]);
+    static const char* const tex_qualities[] = {"low", "medium", "high", "ultra"};
+    static const char* const shadow_qualities[] = {"low", "medium", "high", "ultra"};
+    static const char* const view_dist_names[] = {"very_low", "low", "medium", "high", "ultra", "auto"};
+    Append(text, "texture_quality=%s\nshadow_quality=%s\ndynamic_shadows=%d\nview_distance=%s\n",
+           tex_qualities[std::clamp(v.texture_quality.load(), 0, 3)],
+           shadow_qualities[std::clamp(v.shadow_quality.load(), 0, 3)],
+           int(v.dynamic_shadows.load()),
+           view_dist_names[std::clamp(v.view_distance_mode.load(), 0, 5)]);
     Append(text, "mouse=%d\nmouse_sens=%.2f\nmouse_invert=%d\nprompts=%s\nstick_speed=%.2f\n",
            int(v.mouse.load()), v.mouse_sens.load(), int(v.mouse_invert.load()), PromptsName(v.prompts),
            v.stick_speed.load());
@@ -521,6 +582,32 @@ void Save() {
             std::fputs(text.c_str(), f_gow3);
             std::fflush(f_gow3);
             std::fclose(f_gow3);
+        }
+    }
+
+    static const char* const extra_paths[] = {
+        "EngineConfig.ini",
+        "../EngineConfig.ini",
+        "gow3.ini",
+        "../gow3.ini",
+        "Project/EngineConfig.ini",
+        "Project/gow3.ini",
+        "analysis/uncharted-user/EngineConfig.ini",
+        "analysis/uncharted-user/probe-u1.ini",
+        "analysis/uncharted-user/probe-u2.ini",
+        "analysis/uncharted-user/probe-u3.ini",
+        "analysis/uncharted-user/probe.ini"
+    };
+    for (const char* ep : extra_paths) {
+        if (!p || std::strcmp(p, ep) != 0) {
+            if (FILE* f_extra = std::fopen(ep, "r+")) {
+                std::fclose(f_extra);
+                if (FILE* f_w = std::fopen(ep, "w")) {
+                    std::fputs(text.c_str(), f_w);
+                    std::fflush(f_w);
+                    std::fclose(f_w);
+                }
+            }
         }
     }
 }
@@ -600,4 +687,17 @@ extern "C" int gow3gpu_settings_sun_shadow_distance(void) {
 
 extern "C" int gow3gpu_settings_light_shadow_distance(void) {
     return Gow3Settings::Get().light_shadow_distance;
+}
+
+extern "C" int gow3gpu_settings_texture_quality(void) {
+    return Gow3Settings::Get().texture_quality.load();
+}
+extern "C" int gow3gpu_settings_shadow_quality(void) {
+    return Gow3Settings::Get().shadow_quality.load();
+}
+extern "C" int gow3gpu_settings_dynamic_shadows(void) {
+    return Gow3Settings::Get().dynamic_shadows.load() ? 1 : 0;
+}
+extern "C" int gow3gpu_settings_view_distance_mode(void) {
+    return Gow3Settings::Get().view_distance_mode.load();
 }

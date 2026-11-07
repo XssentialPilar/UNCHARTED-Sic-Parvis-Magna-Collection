@@ -64,12 +64,42 @@ void runtime_gamesettings_tick(void) {
         }
         if (!layout) return;
     }
-    const float fade = gow3gpu_settings_fade_distance() / 100.0f;
-    const float sun = gow3gpu_settings_sun_shadow_distance() / 100.0f;
-    const float light = gow3gpu_settings_light_shadow_distance() / 100.0f;
-    write_float(layout->render + TEMPORAL_FADE, base_fade[0] * fade);
-    write_float(layout->render + CUTSCENE_FADE, base_fade[1] * fade);
-    write_float(layout->render + FADE, base_fade[2] * fade);
-    write_float(layout->light + SUN_SHADOW, base_sun * sun);
-    write_float(layout->light + LIGHT_SHADOW, base_light * light);
+    float fade = gow3gpu_settings_fade_distance() / 100.0f;
+    const int view_mode = gow3gpu_settings_view_distance_mode();
+    if (view_mode == 5) {
+        fade = 0.75f;
+    }
+    const int dyn_shadows = gow3gpu_settings_dynamic_shadows();
+    const int shad_q = gow3gpu_settings_shadow_quality();
+    float sun = gow3gpu_settings_sun_shadow_distance() / 100.0f;
+    float light = gow3gpu_settings_light_shadow_distance() / 100.0f;
+
+    if (!dyn_shadows) {
+        sun = 0.0f;
+        light = 0.0f;
+    } else if (shad_q == 0) {
+        sun *= 0.50f;
+        light *= 0.50f;
+    }
+
+    static float current_fade = 1.0f;
+    static float current_sun = 1.0f;
+    static float current_light = 1.0f;
+    static int initialized_filters = 0;
+    if (!initialized_filters) {
+        current_fade = fade;
+        current_sun = sun;
+        current_light = light;
+        initialized_filters = 1;
+    } else {
+        current_fade += (fade - current_fade) * 0.25f;
+        current_sun += (sun - current_sun) * 0.25f;
+        current_light += (light - current_light) * 0.25f;
+    }
+
+    write_float(layout->render + TEMPORAL_FADE, base_fade[0] * current_fade);
+    write_float(layout->render + CUTSCENE_FADE, base_fade[1] * current_fade);
+    write_float(layout->render + FADE, base_fade[2] * current_fade);
+    write_float(layout->light + SUN_SHADOW, base_sun * current_sun);
+    write_float(layout->light + LIGHT_SHADOW, base_light * current_light);
 }

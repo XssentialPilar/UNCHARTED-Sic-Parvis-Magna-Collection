@@ -137,6 +137,10 @@ struct Values {
     std::atomic<int> graphics_api{1}; // 1 = dx11 by default
     std::atomic<int> vram_budget_mb{0}; // 0 = auto / physical VRAM budget
     std::atomic<int> frame_pacer_mode{0};
+    std::atomic<int> texture_quality{1}; // 0 = low, 1 = medium, 2 = high, 3 = ultra
+    std::atomic<int> shadow_quality{1};  // 0 = low, 1 = medium, 2 = high, 3 = ultra
+    std::atomic<bool> dynamic_shadows{true}; // true = enabled, false = disabled
+    std::atomic<int> view_distance_mode{2}; // 0 = very_low (50%), 1 = low (75%), 2 = med (100%), 3 = high (125%), 4 = ultra (150%), 5 = auto
 
     /// Startup settings for the explicit GOW3_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;

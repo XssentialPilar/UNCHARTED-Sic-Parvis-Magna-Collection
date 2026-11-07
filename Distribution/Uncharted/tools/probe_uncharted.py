@@ -1630,6 +1630,43 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     tex_q = os.environ.get("GOW3_TEXTURE_QUALITY", "medium").strip().lower() or "medium"
     shad_q = os.environ.get("GOW3_SHADOW_QUALITY", "medium").strip().lower() or "medium"
     ssao_q = os.environ.get("GOW3_SSAO_QUALITY", "full").strip().lower() or "full"
+    ini_dyn_shadows = ini_value(settings_file, "dynamic_shadows", "1")
+    dyn_shadows = os.environ.get("GOW3_DYNAMIC_SHADOWS") or ini_dyn_shadows or "1"
+    env["GOW3_DYNAMIC_SHADOWS"] = str(dyn_shadows)
+    ini_view_dist = ini_value(settings_file, "view_distance", "medium")
+    view_dist = os.environ.get("GOW3_VIEW_DISTANCE") or ini_view_dist or "medium"
+    env["GOW3_VIEW_DISTANCE"] = str(view_dist)
+
+    if view_dist == "very_low":
+        env.setdefault("GOW3_FADE_DISTANCE", "50")
+        env.setdefault("GOW3_SUN_SHADOW_DISTANCE", "50")
+        env.setdefault("GOW3_LIGHT_SHADOW_DISTANCE", "50")
+    elif view_dist == "low":
+        env.setdefault("GOW3_FADE_DISTANCE", "75")
+        env.setdefault("GOW3_SUN_SHADOW_DISTANCE", "75")
+        env.setdefault("GOW3_LIGHT_SHADOW_DISTANCE", "75")
+    elif view_dist == "medium":
+        env.setdefault("GOW3_FADE_DISTANCE", "100")
+        env.setdefault("GOW3_SUN_SHADOW_DISTANCE", "100")
+        env.setdefault("GOW3_LIGHT_SHADOW_DISTANCE", "100")
+    elif view_dist == "high":
+        env.setdefault("GOW3_FADE_DISTANCE", "125")
+        env.setdefault("GOW3_SUN_SHADOW_DISTANCE", "125")
+        env.setdefault("GOW3_LIGHT_SHADOW_DISTANCE", "125")
+    elif view_dist == "ultra":
+        env.setdefault("GOW3_FADE_DISTANCE", "150")
+        env.setdefault("GOW3_SUN_SHADOW_DISTANCE", "150")
+        env.setdefault("GOW3_LIGHT_SHADOW_DISTANCE", "150")
+    elif view_dist == "auto":
+        auto_dist = "75" if vram_budget_mb <= 1024 else "100"
+        env.setdefault("GOW3_FADE_DISTANCE", auto_dist)
+        env.setdefault("GOW3_SUN_SHADOW_DISTANCE", auto_dist)
+        env.setdefault("GOW3_LIGHT_SHADOW_DISTANCE", auto_dist)
+
+    if str(dyn_shadows) in ("0", "false", "off"):
+        env["GOW3_SUN_SHADOW_DISTANCE"] = "0"
+        env["GOW3_LIGHT_SHADOW_DISTANCE"] = "0"
+
     env["GOW3_CONFIG"] = str(engine_config if engine_config.exists() else settings_file)
     env["UNCHARTED_CONFIG_FILE"] = env["GOW3_CONFIG"]
     env["GOW3_GRAPHICS_API"] = api

@@ -165,7 +165,10 @@
 
                             <Grid Grid.Row="0" Margin="0,5,0,15">
                                 <TextBlock Text="SELECCIONA TU EXPEDICIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtExpeditionGpuBanner" HorizontalAlignment="Right" VerticalAlignment="Center" Text="GPU Activa: Detectando..." FontSize="12" Foreground="#C2B294" Margin="0,0,15,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0">
+                                    <TextBlock Text="GPU Activa:" FontSize="12" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboExpeditionGpu" Width="320" SelectionChanged="OnExpeditionGpuChanged"/>
+                                </StackPanel>
                             </Grid>
 
                             <!-- 3 Journals Horizontal Layout -->
@@ -299,10 +302,44 @@
                                         <TextBlock Text="Resolución de cascadas solares y luces" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboShadowQuality" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="Baja" Tag="low"/>
+                                        <ComboBoxItem Content="Baja (32 taps / -VRAM)" Tag="low"/>
                                         <ComboBoxItem Content="Media ★" Tag="medium" IsSelected="True"/>
                                         <ComboBoxItem Content="Alta" Tag="high"/>
                                         <ComboBoxItem Content="Ultra" Tag="ultra"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Sombras Dinámicas:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Desactivar elimina pases de sombra solares (+FPS)" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboDynamicShadows" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Activadas (Iluminación Completa) ★" Tag="1" IsSelected="True"/>
+                                        <ComboBoxItem Content="Desactivadas (Máximo Rendimiento / iGPU)" Tag="0"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Distancia de Renderizado (LOD):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Escala de detalle de geometría y distancias de dibujado" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboViewDistance" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Muy baja (50% distancia)" Tag="very_low"/>
+                                        <ComboBoxItem Content="Baja (75% distancia)" Tag="low"/>
+                                        <ComboBoxItem Content="Media (100% estándar) ★" Tag="medium" IsSelected="True"/>
+                                        <ComboBoxItem Content="Alta (125% distancia)" Tag="high"/>
+                                        <ComboBoxItem Content="Ultra (150% distancia máxima)" Tag="ultra"/>
+                                        <ComboBoxItem Content="Automática (Adaptativa según VRAM)" Tag="auto"/>
                                     </ComboBox>
                                 </Grid>
 
