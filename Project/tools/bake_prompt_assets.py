@@ -112,6 +112,46 @@ def get_1u_svg_templates(theme):
         results[name] = base_1u.replace('%%LEGEND%%', leg)
     return results
 
+def get_wide_svg_templates(theme):
+    tab_file = os.path.join(SVG_DIR, theme, "TAB.svg")
+    with open(tab_file, "r", encoding="utf-8") as f:
+        tab_svg = f.read()
+    base_wide = re.sub(r'<g>.*?</g>\s*</svg>', '%%LEGEND%%</svg>', tab_svg, flags=re.DOTALL)
+
+    ink = "#fcf0d7" if theme == "OBSIDIAN" else "#142936"
+    stroke = "#040b10" if theme == "OBSIDIAN" else "#f9eacb"
+
+    wide_results = {}
+
+    # TAB_WIDE: Enhanced bold arrows and large TAB text for 1.5U slots
+    tab_wide_legend = (
+        f'<g><path d="M30 46 H62 L52 36 M62 46 L52 56 M30 76 H62 L52 66 M62 76 L52 86" '
+        f'fill="none" stroke="{ink}" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<path d="M9 1493H1247V1202H802V0H455V1202H9ZM2242 272H1700L1614 0H1266L1764 1493H2177L2675 0H2326ZM1786 549H2154L1971 1143ZM3390 915Q3472 915 3514.5 955.0Q3557 995 3557 1073Q3557 1150 3514.5 1190.5Q3472 1231 3390 1231H3199V915ZM3402 262Q3507 262 3559.5 311.0Q3612 360 3612 459Q3612 556 3559.5 604.5Q3507 653 3402 653H3199V262ZM3724 799Q3836 763 3897.0 666.0Q3958 569 3958 428Q3958 212 3826.5 106.0Q3695 0 3427 0H2852V1493H3372Q3652 1493 3777.5 1399.0Q3903 1305 3903 1098Q3903 989 3857.5 912.5Q3812 836 3724 799Z" '
+        f'transform="translate(86.0 80.0) scale(0.024 -0.024)" fill="{ink}" stroke="{stroke}" stroke-width=".9" '
+        f'vector-effect="non-scaling-stroke" stroke-linejoin="round" paint-order="stroke fill"/></g>'
+    )
+    wide_results["TAB_WIDE"] = base_wide.replace('%%LEGEND%%', tab_wide_legend)
+
+    # For letters A..Z and digits 0..9: center in 1.5U keycap (192 wide, center at 96 vs 64)
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
+        fname = f"KEY_{letter}.svg" if letter.isalpha() else f"DIGIT_{letter}.svg"
+        fpath = os.path.join(SVG_DIR, theme, fname)
+        if os.path.exists(fpath):
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read()
+            leg_m = re.search(r'(<g>.*?</g>)\s*</svg>', content, flags=re.DOTALL)
+            if leg_m:
+                leg = leg_m.group(1)
+                wide_leg = re.sub(
+                    r'translate\(([\d.]+)\s+([\d.]+)\)',
+                    lambda m: f'translate({float(m.group(1)) + 32.0:.4f} {float(m.group(2)):.4f})',
+                    leg
+                )
+                wide_results[f"KEY_{letter}_WIDE"] = base_wide.replace('%%LEGEND%%', wide_leg)
+
+    return wide_results
+
 def bake():
     print(f"Loading metadata: {JSON_PATH}")
     with open(JSON_PATH, 'r', encoding='utf-8') as f:
@@ -181,6 +221,37 @@ def bake():
                     'id': id_bytes,
                     'theme': theme_idx,
                     'u_w': 1.0,
+                    'u_h': 1.0,
+                    'pw': pw,
+                    'ph': ph,
+                    'offset': data_offset,
+                    'size': data_size,
+                })
+
+        # Bake 1.5U wide variants for shoulder buttons and wide slots
+        print(f"Baking 1.5U wide variants for {theme}...")
+        wide_svgs = get_wide_svg_templates(theme)
+        for base_name, svg_content in wide_svgs.items():
+            pw = int(round(1.5 * BASE_U))
+            ph = BASE_U
+            rgba = render_svg_str(svg_content, pw, ph)
+            data_offset = len(blob)
+            data_size = len(rgba)
+            blob.extend(rgba)
+
+            aliases = [base_name]
+            if base_name.startswith("KEY_") and base_name.endswith("_WIDE"):
+                short_name = base_name[4:-5] + "_WIDE"
+                aliases.append(short_name)
+            elif base_name == "TAB_WIDE":
+                aliases.extend(["TAB_1_5U"])
+
+            for alias in aliases:
+                id_bytes = alias.encode('utf-8')[:31]
+                entries.append({
+                    'id': id_bytes,
+                    'theme': theme_idx,
+                    'u_w': 1.5,
                     'u_h': 1.0,
                     'pw': pw,
                     'ph': ph,

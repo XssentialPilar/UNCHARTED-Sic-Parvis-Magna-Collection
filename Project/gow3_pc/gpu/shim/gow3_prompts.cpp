@@ -239,6 +239,9 @@ public:
             }
         }
     }
+    void Stroke(auto&& sdf, float thickness, Rgb color, float opacity = 1.0f) {
+        Fill([&](float x, float y) { return std::fabs(sdf(x, y)) - thickness * 0.5f; }, color, opacity);
+    }
 
     Canvas& GetCanvas() { return canvas; }
 
@@ -666,6 +669,38 @@ public:
         return Find(key_or_label, theme);
     }
 
+    const PromptAssetEntry* FindWide(const std::string& key_or_label, int theme = 0) const {
+        if (!loaded_ || key_or_label.empty()) return nullptr;
+        std::string canon = Canonicalize(key_or_label);
+        std::string wide = canon + "_WIDE";
+        for (const auto& e : entries_) {
+            if (e.theme == theme && std::strcmp(e.id, wide.c_str()) == 0) {
+                return &e;
+            }
+        }
+        for (const auto& e : entries_) {
+            if (std::strcmp(e.id, wide.c_str()) == 0) {
+                return &e;
+            }
+        }
+        std::string u15 = canon + "_1_5U";
+        for (const auto& e : entries_) {
+            if (e.theme == theme && std::strcmp(e.id, u15.c_str()) == 0) {
+                return &e;
+            }
+        }
+        for (const auto& e : entries_) {
+            if (std::strcmp(e.id, u15.c_str()) == 0) {
+                return &e;
+            }
+        }
+        const auto* direct = Find(key_or_label, theme);
+        if (direct && (direct->uw / direct->uh >= 1.25f)) {
+            return direct;
+        }
+        return nullptr;
+    }
+
     const uint8_t* GetData(const PromptAssetEntry& entry) const {
         if (!loaded_) return nullptr;
         if (size_t(data_offset_ + entry.data_offset + entry.data_size) <= bytes_.size()) {
@@ -902,9 +937,15 @@ void DrawBinding(Painter& p, Pass pass, float cx, float cy, float w, float h, co
         DrawPadButton(p, pass, cx, cy, w, h, label);
         return;
     }
-    const auto* asset = (w / h < 1.35f) ?
-        PromptAssetBank::Instance().Find1U(label, 0) :
-        PromptAssetBank::Instance().Find(label, 0);
+    const bool is_wide = (w / h >= 1.30f);
+    const auto* asset = is_wide ?
+        PromptAssetBank::Instance().FindWide(label, 0) :
+        PromptAssetBank::Instance().Find1U(label, 0);
+    if (!asset) {
+        asset = is_wide ?
+            PromptAssetBank::Instance().Find(label, 0) :
+            PromptAssetBank::Instance().Find1U(label, 0);
+    }
     if (!asset) asset = PromptAssetBank::Instance().Find(label, 0);
     if (asset) {
         if (pass == Pass::Body) {
@@ -928,12 +969,8 @@ void DrawBinding(Painter& p, Pass pass, float cx, float cy, float w, float h, co
         DrawMouse(p, pass, cx, cy, mh, std::max(0.0f, (w - mw) / 2), part);
         return;
     }
-    float kw = h;
-    if (Codepoints(label).size() > 1) {
-        const size_t chars = Codepoints(label).size();
-        kw = std::clamp(Text::Width(label, 0.42f * h, LabelCondense(chars)) + 0.4f * h, h, w);
-    }
-    DrawKey(p, pass, cx, cy, std::min(kw, w), h, label);
+    float kw = is_wide ? std::min(w, h * 1.6f) : h;
+    DrawKey(p, pass, cx, cy, kw, h, label);
 }
 
 // Four keys as an inverted T (WASD, the d-pad's keys).
@@ -1277,9 +1314,15 @@ void DrawPictureLabel(Painter& p, const std::string& label, float cx, float cy, 
     if (label.empty()) {
         return;
     }
-    const auto* asset = (max_width / height < 1.35f) ?
-        PromptAssetBank::Instance().Find1U(label, 0) :
-        PromptAssetBank::Instance().Find(label, 0);
+    const bool is_wide = (max_width / height >= 1.30f);
+    const auto* asset = is_wide ?
+        PromptAssetBank::Instance().FindWide(label, 0) :
+        PromptAssetBank::Instance().Find1U(label, 0);
+    if (!asset) {
+        asset = is_wide ?
+            PromptAssetBank::Instance().Find(label, 0) :
+            PromptAssetBank::Instance().Find1U(label, 0);
+    }
     if (!asset) asset = PromptAssetBank::Instance().Find(label, 0);
     if (asset) {
         const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
@@ -1343,9 +1386,93 @@ void RedrawFace(Picture& pic, const std::string& label, bool controller) {
         v /= nb;
     }
     cx = (x0 + x1 + 1) / 2.0f, cy = (y0 + y1 + 1) / 2.0f;
-    // The dark button: round, or an ellipse (pictures of the button pressed are flat).
     const float rx = (x1 - x0 + 1) / 2.0f, ry = (y1 - y0 + 1) / 2.0f, r = std::min(rx, ry);
     const auto unit = [=](float x, float y) { return std::hypot((x - cx) / rx, (y - cy) / ry); };
+
+    if (!controller) {
+        // Sample original colored glow (e.g. vibrant green for Triangle/pickup prompt)
+        float glow_accum[3] = {};
+        float glow_weight = 0.0f;
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                const u8* c = &pic.rgba[(y * w + x) * 4];
+                if (c[3] < 30) continue;
+                const float u = unit(x + 0.5f, y + 0.5f);
+                if (u >= 0.70f && u <= 1.65f) {
+                    const float chroma = float(std::max({c[0], c[1], c[2]}) - std::min({c[0], c[1], c[2]}));
+                    if (chroma > 20.0f) {
+                        glow_accum[0] += c[0] * chroma;
+                        glow_accum[1] += c[1] * chroma;
+                        glow_accum[2] += c[2] * chroma;
+                        glow_weight += chroma;
+                    }
+                }
+            }
+        }
+        Rgb glow_color = glow;
+        if (glow_weight > 40.0f) {
+            glow_color = {glow_accum[0] / glow_weight / 255.0f,
+                          glow_accum[1] / glow_weight / 255.0f,
+                          glow_accum[2] / glow_weight / 255.0f};
+            float max_c = std::max({glow_color.r, glow_color.g, glow_color.b});
+            if (max_c > 0.05f) {
+                float boost = 1.0f / max_c;
+                glow_color = {std::min(1.0f, glow_color.r * boost),
+                              std::min(1.0f, glow_color.g * boost),
+                              std::min(1.0f, glow_color.b * boost)};
+            }
+        }
+
+        // Wipe ALL traces of the previous circular PlayStation button body, rim, and circular glow
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                if (unit(x + 0.5f, y + 0.5f) <= 1.65f) {
+                    u8* p = &pic.rgba[(y * w + x) * 4];
+                    p[0] = p[1] = p[2] = p[3] = 0;
+                }
+            }
+        }
+
+        // Look up authentic keycap asset
+        const auto* asset = PromptAssetBank::Instance().Find1U(label, 0);
+        if (!asset) asset = PromptAssetBank::Instance().Find(label, 0);
+        const float aspect = asset ? (asset->uw / asset->uh) : 1.0f;
+        const float kh = 1.95f * r;
+        const float kw = kh * aspect;
+        const float hw = kw / 2.0f, hh = kh / 2.0f;
+        const float rc = 0.24f * hh;
+
+        // Draw geometric contour and glow halo adapting precisely to keycap shape
+        Canvas canvas = ToCanvas(pic);
+        Painter p{canvas, 0, 0, w, h, false};
+        auto key_dist = [=](float x, float y) {
+            return RoundBox(x, y, cx, cy, hw, hh, rc);
+        };
+        // Outer halo contour:
+        p.Halo(key_dist, 0.44f * hh, 0.65f, glow_color);
+        // Vibrant inner halo hugging the perimeter:
+        p.Halo(key_dist, 0.18f * hh, 0.90f, glow_color);
+        // Crisp geometric contour stroke:
+        p.Stroke([=](float x, float y) { return key_dist(x, y) - 0.5f; }, 2.0f, glow_color);
+        // Dark backing:
+        p.Fill([=](float x, float y) { return key_dist(x, y); }, Rgb{0.06f, 0.08f, 0.10f});
+        FromCanvas(canvas, pic);
+
+        // Blit vector keycap
+        if (asset) {
+            const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
+            if (src) {
+                BlitAssetToPicture(pic, *asset, src, cx, cy, kw, kh);
+                return;
+            }
+        }
+        Canvas canvas2 = ToCanvas(pic);
+        Painter p2{canvas2, 0, 0, w, h, false};
+        DrawPictureLabel(p2, label, cx, cy, kh, kw, glow_color);
+        FromCanvas(canvas2, pic);
+        return;
+    }
+
     float body[3] = {}, symbol[3] = {}, n_body = 0, n_symbol = 0, symbol_reach = 0.0f;
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
@@ -1481,46 +1608,54 @@ void RedrawShoulder(Picture& pic, const std::string& label) {
     FromCanvas(canvas, pic);
 }
 
-// Uncharted 3's d-pad picture with one arm lit (orange): the bound key is written on that arm, in
-// the dark of the other arms, so the picture still reads as "this direction" (keyboard and mouse
-// only: other controllers' d-pads look the same).
+// D-pad prompts (e.g. CONSEJO / Hint): Completely eliminates the PS4 cross (cruceta)
+// and displays exclusively the assigned keycap with clear visibility, proper sizing, and clean halo.
 void RedrawDpad(Picture& pic, const std::string& label) {
     const int w = pic.w, h = pic.h;
-    int x0 = w, y0 = h, x1 = -1, y1 = -1;
-    float dark[3] = {}, n_dark = 0;
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            const u8* c = &pic.rgba[(y * w + x) * 4];
-            if (c[3] < 128) {
-                continue;
-            }
-            // The lit arm: saturated orange (red well above blue).
-            if (c[0] > 150 && c[0] - c[2] > 90 && c[0] >= c[1]) {
-                x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x), y1 = std::max(y1, y);
-            } else if (Luma(c) < 90) {
-                for (int i = 0; i < 3; ++i) {
-                    dark[i] += c[i];
-                }
-                ++n_dark;
-            }
-        }
-    }
-    if (x1 < x0 || (x1 - x0) < w / 16 || (y1 - y0) < h / 16) {
-        return;
-    }
-    const Rgb ink_color = n_dark ? Rgb{dark[0] / n_dark / 255, dark[1] / n_dark / 255, dark[2] / n_dark / 255}
-                                 : Rgb{0.12f, 0.12f, 0.11f};
+    if (w < 32 || h < 32) return;
+
+    // 1. Completely eliminate the PlayStation D-pad cross (all arms, cross body, and background)
+    std::memset(pic.rgba.data(), 0, pic.rgba.size());
+
+    const std::string key = label.empty() ? "3" : label;
+    const float cx = w / 2.0f, cy = h / 2.0f;
+    const float s = w * 0.58f;
+    const float hw = s / 2.0f, hh = s / 2.0f;
+    const float rc = 0.24f * hh;
+
+    // 2. Draw geometric contour and prompt halo adapted strictly to the keycap shape
     Canvas canvas = ToCanvas(pic);
     Painter p{canvas, 0, 0, w, h, false};
-    const float cx = (x0 + x1 + 1) / 2.0f, cy = (y0 + y1 + 1) / 2.0f;
-    const float aw = float(x1 - x0 + 1), ah = float(y1 - y0 + 1);
-    DrawPictureLabel(p, label, cx, cy, 0.92f * std::min(aw, ah), 0.95f * aw, ink_color);
+    auto key_dist = [=](float x, float y) {
+        return RoundBox(x, y, cx, cy, hw, hh, rc);
+    };
+    // Drop shadow
+    p.FillShaded([=](float x, float y) { return RoundBox(x, y, cx, cy + 2.5f, hw + 2.0f, hh + 2.0f, rc + 2.0f); },
+                 [](float, float) { return Rgb{0.04f, 0.04f, 0.04f}; });
+    // Geometric prompt halo conforming to keycap
+    p.Halo(key_dist, 0.35f * hh, 0.65f, glow);
+    p.Stroke([=](float x, float y) { return key_dist(x, y) - 0.5f; }, 1.8f, glow);
+    p.Fill([=](float x, float y) { return key_dist(x, y); }, Rgb{0.06f, 0.08f, 0.10f});
     FromCanvas(canvas, pic);
+
+    const auto* asset = PromptAssetBank::Instance().Find1U(key, 0);
+    if (!asset) asset = PromptAssetBank::Instance().Find(key, 0);
+    if (asset) {
+        const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
+        if (src) {
+            BlitAssetToPicture(pic, *asset, src, cx, cy, s, s);
+            return;
+        }
+    }
+    Canvas canvas2 = ToCanvas(pic);
+    Painter p2{canvas2, 0, 0, w, h, false};
+    DrawPictureLabel(p2, key, cx, cy, s, s, glow);
+    FromCanvas(canvas2, pic);
 }
 
 // Drake's Journal & Map pictures (512x256 BC1, upright):
-// Preserves the leather journal / antique map on the left (x < 192), clears the PS4 touchpad badge,
-// and blits the authentic vector keycap (TAB or configured key) preserving physical 1.5U proportions.
+// Preserves the antique leather journal / map, cleanly clears the PS4 touchpad badge,
+// and blits the authentic vector keycap (TAB or configured key) with natural 1.5U proportions.
 void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool is_map) {
     const int w = pic.w, h = pic.h;
     if (w < 256 || h < 128) return;
@@ -1528,32 +1663,49 @@ void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool
     const float sx = float(w) / 512.0f;
     const float sy = float(h) / 256.0f;
 
-    const float cx = (is_map ? 238.5f : 248.0f) * sx;
-    const float cy = (is_map ? 163.5f : 157.0f) * sy;
-    const int bx0 = int((is_map ? 170.0f : 180.0f) * sx);
-    const int bx1 = int((is_map ? 310.0f : 320.0f) * sx);
-    const int by0 = int(75.0f * sy);
-    const int by1 = int((is_map ? 245.0f : 235.0f) * sy);
+    const float cx = (is_map ? 238.0f : 246.0f) * sx;
+    const float cy = (is_map ? 162.0f : 158.0f) * sy;
 
+    // Clear ONLY the silver touchpad badge pixels in the badge area, preserving the book
+    const int bx0 = int(185.0f * sx), bx1 = int(310.0f * sx);
+    const int by0 = int(100.0f * sy), by1 = int(215.0f * sy);
     for (int y = std::max(0, by0); y <= std::min(h - 1, by1); ++y) {
         for (int x = std::max(0, bx0); x <= std::min(w - 1, bx1); ++x) {
-            uint8_t* p = &pic.rgba[(y * w + x) * 4];
+            u8* p = &pic.rgba[(y * w + x) * 4];
+            if (p[3] < 50) continue;
             float luma = 0.3f * p[0] + 0.59f * p[1] + 0.11f * p[2];
-            if (luma > 65.0f || (p[0] > 70 && p[1] > 70 && p[2] > 70)) {
-                p[0] = 48; p[1] = 44; p[2] = 40; p[3] = 255;
+            int chroma = std::max({p[0], p[1], p[2]}) - std::min({p[0], p[1], p[2]});
+            if (luma > 55.0f && chroma < 28 && p[0] < p[2] + 25) {
+                p[0] = p[1] = p[2] = p[3] = 0;
             }
         }
     }
 
     if (!controller) {
         std::string effective_key = label.empty() ? "TAB" : label;
-        const auto* asset = PromptAssetBank::Instance().Find(effective_key, 0);
+        const auto* asset = PromptAssetBank::Instance().FindWide(effective_key, 0);
+        if (!asset) asset = PromptAssetBank::Instance().Find(effective_key, 0);
         if (!asset) asset = PromptAssetBank::Instance().Find("TAB", 0);
         if (asset) {
             const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
             if (src) {
-                float th = 112.0f * sy;
+                float th = 70.0f * sy;
                 float tw = th * (asset->uw / asset->uh);
+                float hw = tw / 2.0f, hh = th / 2.0f;
+                float rc = 0.22f * hh;
+
+                Canvas canvas = ToCanvas(pic);
+                Painter p{canvas, 0, 0, w, h, false};
+                auto key_dist = [=](float x, float y) {
+                    return RoundBox(x, y, cx, cy, hw, hh, rc);
+                };
+                p.FillShaded([=](float x, float y) { return RoundBox(x, y, cx, cy + 2.5f * sy, hw + 2.0f, hh + 2.0f, rc + 2.0f); },
+                             [](float, float) { return Rgb{0.04f, 0.04f, 0.04f}; });
+                p.Halo(key_dist, 8.0f * sy, 0.55f, glow);
+                p.Stroke([=](float x, float y) { return key_dist(x, y) - 0.5f; }, 1.5f, glow);
+                p.Fill([=](float x, float y) { return key_dist(x, y); }, Rgb{0.07f, 0.09f, 0.11f});
+                FromCanvas(canvas, pic);
+
                 BlitAssetToPicture(pic, *asset, src, cx, cy, tw, th);
                 return;
             }
