@@ -51,6 +51,7 @@ enum class GraphicsApi : uint8_t {
     DirectX11_FL11_0 = 0,
     DirectX12 = 1,
     Vulkan13 = 2,
+    DirectX9 = 3,
 };
 
 struct SystemSpecs {

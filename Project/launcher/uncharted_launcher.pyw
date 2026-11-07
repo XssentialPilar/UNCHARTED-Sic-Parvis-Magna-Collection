@@ -1962,7 +1962,7 @@ class Launcher:
             self.show_tab(key)
 
     def active_spec_summary(self):
-        api_label = {"dx11": "D3D11", "dx12": "D3D12", "vulkan": "VULKAN"}.get(
+        api_label = {"dx11": "D3D11", "dx12": "D3D12", "vulkan": "VULKAN", "dx9": "D3D9"}.get(
             normalize_graphics_api(self.config.get("graphics_api", "dx11")), "D3D11"
         )
         vram = normalize_vram_cap(self.config.get("vram_budget_mb"), self.config.get("texture_quality", "medium"))

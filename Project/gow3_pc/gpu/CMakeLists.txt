@@ -508,6 +508,7 @@ add_executable(spm-invariants-test EXCLUDE_FROM_ALL
     ../../native/core/core.cpp
     ../../native/core/arena_allocator.cpp
     ../../native/core/frame_pacer.cpp
+    ../../native/graphics/dx9_backend.cpp
     ../../native/graphics/dx11_backend.cpp
     ../../native/graphics/dx12_backend.cpp
     ../../native/graphics/dynamic_ring_buffer.cpp

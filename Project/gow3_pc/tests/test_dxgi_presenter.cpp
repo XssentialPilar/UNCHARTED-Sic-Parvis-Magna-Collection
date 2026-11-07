@@ -70,7 +70,7 @@ int main() {
                                      nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     assert(test_hwnd != nullptr);
 
-    for (const Gow3Dxgi::Api api : {Gow3Dxgi::Api::DirectX11, Gow3Dxgi::Api::DirectX12}) {
+    for (const Gow3Dxgi::Api api : {Gow3Dxgi::Api::DirectX11, Gow3Dxgi::Api::DirectX12, Gow3Dxgi::Api::DirectX9}) {
         Gow3Dxgi::PresenterBridge bridge;
         const bool init_ok = bridge.Initialize(instance, test_hwnd, 640, 360, api);
         assert(init_ok);

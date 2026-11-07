@@ -22,6 +22,7 @@ enum class Api : int {
     Vulkan = 0,
     DirectX11 = 1,
     DirectX12 = 2,
+    DirectX9 = 3,
 };
 
 enum class PacerMode : int {

@@ -139,6 +139,7 @@ public:
     [[nodiscard]] virtual ScissorRect GetActiveScissor() const noexcept = 0;
 };
 
+[[nodiscard]] std::unique_ptr<IGraphicsBackend> CreateDx9Backend();
 [[nodiscard]] std::unique_ptr<IGraphicsBackend> CreateDx11Backend();
 [[nodiscard]] std::unique_ptr<IGraphicsBackend> CreateDx12Backend();
 

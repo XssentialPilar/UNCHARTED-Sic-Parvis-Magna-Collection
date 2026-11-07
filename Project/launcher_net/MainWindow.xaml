@@ -235,6 +235,7 @@
                                         <ComboBoxItem Content="DirectX 11 (Hardware Flip-Discard) ★" Tag="dx11" IsSelected="True"/>
                                         <ComboBoxItem Content="DirectX 12 (Flip-Model)" Tag="dx12"/>
                                         <ComboBoxItem Content="Vulkan (Nativo WSI)" Tag="vulkan"/>
+                                        <ComboBoxItem Content="DirectX 9 (D3D9Ex FlipEx Nativo)" Tag="dx9"/>
                                     </ComboBox>
                                 </Grid>
 

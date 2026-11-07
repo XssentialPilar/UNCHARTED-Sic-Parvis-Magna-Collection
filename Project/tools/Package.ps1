@@ -26,18 +26,33 @@ if (Test-Path $CodexMsys) {
     $env:PATH = "C:\msys64\clang64\bin;C:\msys64\usr\bin;$env:PATH"
 }
 
+function Safe-CopyItem {
+    param([string]$Source, [string]$Destination, [switch]$Recurse)
+    if (Test-Path $Source) {
+        try {
+            if ($Recurse) {
+                Copy-Item -Path $Source -Destination $Destination -Recurse -Force -ErrorAction Stop
+            } else {
+                Copy-Item -Path $Source -Destination $Destination -Force -ErrorAction Stop
+            }
+        } catch {
+            Write-Warning "Skipped copying '$Source' to '$Destination' (file may be in use): $_"
+        }
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
+$NetPublishExe = Join-Path $ProjectRoot "launcher_net\publish\Uncharted - Sic Parvis Magna Collection.exe"
 $MainExe = Join-Path $ProjectRoot "Uncharted - Sic Parvis Magna Collection.exe"
+if (Test-Path $NetPublishExe) {
+    Safe-CopyItem -Source $NetPublishExe -Destination $MainExe
+}
 $StartExe = Join-Path $ProjectRoot "Start Uncharted.exe"
 
-if (Test-Path $MainExe) {
-    Copy-Item -Path $MainExe -Destination (Join-Path $OutputDir "Uncharted - Sic Parvis Magna Collection.exe") -Force
-    Copy-Item -Path $MainExe -Destination (Join-Path $WorkspaceRoot "Uncharted - Sic Parvis Magna Collection.exe") -Force -ErrorAction SilentlyContinue
-}
-if (Test-Path $StartExe) {
-    Copy-Item -Path $StartExe -Destination (Join-Path $OutputDir "Start Uncharted.exe") -Force
-}
+Safe-CopyItem -Source $MainExe -Destination (Join-Path $OutputDir "Uncharted - Sic Parvis Magna Collection.exe")
+Safe-CopyItem -Source $MainExe -Destination (Join-Path $WorkspaceRoot "Uncharted - Sic Parvis Magna Collection.exe")
+Safe-CopyItem -Source $StartExe -Destination (Join-Path $OutputDir "Start Uncharted.exe")
 
 $ProbeExe = Join-Path $BuildDir "gow3-probe.exe"
 $GpuDll = Join-Path $BuildDir "libgow3gpu.dll"
@@ -57,13 +72,13 @@ New-Item -ItemType Directory -Force -Path $DistGow3OutGpuDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DistGow3ScriptsDir | Out-Null
 
 if (Test-Path $ProbeExe) {
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $OutputDir "gow3-probe.exe") -Force
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $OutputDir "Uncharted.exe") -Force
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $OutputDir "uncharted_probe.exe") -Force
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $Gow3OutDir "gow3-probe.exe") -Force
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $Gow3OutDir "Uncharted.exe") -Force
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $DistGow3OutDir "gow3-probe.exe") -Force
-    Copy-Item -Path $ProbeExe -Destination (Join-Path $DistGow3OutDir "Uncharted.exe") -Force
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $OutputDir "gow3-probe.exe")
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $OutputDir "Uncharted.exe")
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $OutputDir "uncharted_probe.exe")
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $Gow3OutDir "gow3-probe.exe")
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $Gow3OutDir "Uncharted.exe")
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $DistGow3OutDir "gow3-probe.exe")
+    Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $DistGow3OutDir "Uncharted.exe")
 
     # Bundle all required MSYS2 clang64 runtime DLLs (SDL3.dll, avcodec-63.dll, avutil-61.dll, swscale-10.dll, etc.)
     $LddCmd = Get-Command ldd.exe -ErrorAction SilentlyContinue
@@ -129,6 +144,13 @@ if (Test-Path (Join-Path $ProjectRoot "tools\defaults\disabled-optimizations.txt
     $DistUserDir = Join-Path $OutputDir "analysis\uncharted-user"
     New-Item -ItemType Directory -Force -Path $DistUserDir | Out-Null
     Copy-Item -Path (Join-Path $ProjectRoot "tools\defaults\disabled-optimizations.txt") -Destination (Join-Path $DistUserDir "disabled-optimizations.txt") -Force
+}
+
+$DistVendorDx9Dir = Join-Path $OutputDir "vendor\directx9"
+$SrcVendorDx9Dir = Join-Path $WorkspaceRoot "vendor\directx9"
+if (Test-Path $SrcVendorDx9Dir) {
+    New-Item -ItemType Directory -Force -Path $DistVendorDx9Dir | Out-Null
+    Copy-Item -Path (Join-Path $SrcVendorDx9Dir "*") -Destination $DistVendorDx9Dir -Recurse -Force
 }
 
 # Generate SHA-256 integrity manifest (Section 6.1 requirement)

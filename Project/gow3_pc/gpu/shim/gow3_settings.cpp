@@ -113,6 +113,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     if (key == "graphics_api") {
         v.graphics_api = (value == "dx11" || value == "d3d11" || value == "1")   ? 1
                          : (value == "dx12" || value == "d3d12" || value == "2") ? 2
+                         : (value == "dx9" || value == "d3d9" || value == "3")   ? 3
                                                                                  : 0;
         return;
     }
@@ -460,10 +461,10 @@ KeyValues Current() {
     Append(text, "close_shortcut=%d\n", int(v.close_shortcut.load()));
     Append(text, "fade_distance=%d\nsun_shadow_distance=%d\nlight_shadow_distance=%d\n", v.fade_distance.load(),
            v.sun_shadow_distance.load(), v.light_shadow_distance.load());
-    static const char* const api_names[] = {"vulkan", "dx11", "dx12"};
+    static const char* const api_names[] = {"vulkan", "dx11", "dx12", "dx9"};
     static const char* const pacer_names[] = {"hybrid", "timer", "spin", "off"};
     Append(text, "graphics_api=%s\nvram_budget_mb=%d\nframe_pacer=%s\n",
-           api_names[std::clamp(v.graphics_api.load(), 0, 2)], v.vram_budget_mb.load(),
+           api_names[std::clamp(v.graphics_api.load(), 0, 3)], v.vram_budget_mb.load(),
            pacer_names[std::clamp(v.frame_pacer_mode.load(), 0, 3)]);
     Append(text, "mouse=%d\nmouse_sens=%.2f\nmouse_invert=%d\nprompts=%s\nstick_speed=%.2f\n",
            int(v.mouse.load()), v.mouse_sens.load(), int(v.mouse_invert.load()), PromptsName(v.prompts),

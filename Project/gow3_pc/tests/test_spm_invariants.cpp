@@ -155,6 +155,11 @@ void TestSection8_ZeroAllocationsAcross10000Presents() {
     DynamicRingBuffer ringBuffer{};
     assert(ringBuffer.Initialize(nullptr, kDefaultRingBufferCapacityBytes));
 
+    auto dx9 = CreateDx9Backend();
+    assert(dx9->GetApi() == unc::core::GraphicsApi::DirectX9);
+    assert(SUCCEEDED(dx9->Initialize(1280U, 720U, true)));
+    assert(dx9->IsInitialized());
+
     auto dx11 = CreateDx11Backend();
     assert(SUCCEEDED(dx11->Initialize(1280U, 720U, true)));
     SwapchainHook hook(dx11.get());

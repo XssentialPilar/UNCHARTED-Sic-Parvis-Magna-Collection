@@ -15,6 +15,7 @@
 #include <dxgi1_5.h>
 #include <d3d11_1.h>
 #include <d3d12.h>
+#include <d3d9.h>
 #include <wrl/client.h>
 #ifdef MemoryBarrier
 #undef MemoryBarrier
@@ -256,6 +257,7 @@ struct PresenterBridge::Impl {
     HMODULE dxgi_module = nullptr;
     HMODULE d3d11_module = nullptr;
     HMODULE d3d12_module = nullptr;
+    HMODULE d3d9_module = nullptr;
 
     ComPtr<IDXGIFactory1> factory1;
     ComPtr<IDXGIFactory2> factory2;
@@ -264,6 +266,13 @@ struct PresenterBridge::Impl {
     ComPtr<IDXGISwapChain> swapchain;
     ComPtr<IDXGISwapChain1> swapchain1;
     ComPtr<IDXGISwapChain3> swapchain3;
+
+    // DirectX 9 state
+    ComPtr<IDirect3D9Ex> d3d9ex;
+    ComPtr<IDirect3DDevice9Ex> d3d9_device;
+    std::array<ComPtr<IDirect3DTexture9>, kBufferCount> d3d9_shared_tex{};
+    std::array<ComPtr<ID3D11Texture2D>, kBufferCount> d3d9_interop_d3d11_tex{};
+    ComPtr<IDirect3DSurface9> d3d9_backbuffer;
 
     // DirectX 11 state
     ComPtr<ID3D11Device> d3d11_device;
@@ -657,7 +666,7 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
                                      : VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT;
 
     if (impl->headless_test) {
-        if (active_api == Api::DirectX11) {
+        if (active_api == Api::DirectX11 || active_api == Api::DirectX9) {
             const D3D11_TEXTURE2D_DESC target_desc = {
                 .Width = impl->width,
                 .Height = impl->height,
@@ -708,7 +717,7 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
 
     for (uint32_t i = 0; i < kBufferCount; ++i) {
         HANDLE nt_handle = nullptr;
-        if (active_api == Api::DirectX11) {
+        if (active_api == Api::DirectX11 || active_api == Api::DirectX9) {
             const D3D11_TEXTURE2D_DESC tex_desc = {
                 .Width = impl->width,
                 .Height = impl->height,
@@ -732,6 +741,23 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
                 !nt_handle) {
                 ReleaseSharedImages(out_images, out_views);
                 return false;
+            }
+
+            if (active_api == Api::DirectX9 && impl->d3d9_device) {
+                HANDLE d3d9_handle = nullptr;
+                if (FAILED(impl->d3d9_device->CreateTexture(
+                        impl->width, impl->height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                        D3DPOOL_DEFAULT, impl->d3d9_shared_tex[i].ReleaseAndGetAddressOf(),
+                        &d3d9_handle)) || !d3d9_handle) {
+                    ReleaseSharedImages(out_images, out_views);
+                    return false;
+                }
+                if (FAILED(impl->d3d11_device->OpenSharedResource(
+                        d3d9_handle, __uuidof(ID3D11Texture2D),
+                        reinterpret_cast<void**>(impl->d3d9_interop_d3d11_tex[i].ReleaseAndGetAddressOf())))) {
+                    ReleaseSharedImages(out_images, out_views);
+                    return false;
+                }
             }
         } else {
             const D3D12_HEAP_PROPERTIES heap_props = {
@@ -932,6 +958,13 @@ void PresenterBridge::ReleaseSharedImages(std::vector<vk::Image>& images,
         }
     }
 
+    for (auto& tex : impl->d3d9_shared_tex) {
+        tex.Reset();
+    }
+    for (auto& tex : impl->d3d9_interop_d3d11_tex) {
+        tex.Reset();
+    }
+    impl->d3d9_backbuffer.Reset();
     for (auto& tex : impl->d3d11_shared_tex) {
         tex.Reset();
     }
@@ -955,6 +988,32 @@ bool PresenterBridge::Resize(uint32_t width, uint32_t height, vk::Format view_fo
         return false;
     }
     ReleaseSharedImages(out_images, out_views);
+
+    if (active_api == Api::DirectX9 && !impl->headless_test && impl->d3d9_device) {
+        for (auto& tex : impl->d3d9_shared_tex) {
+            tex.Reset();
+        }
+        for (auto& tex : impl->d3d9_interop_d3d11_tex) {
+            tex.Reset();
+        }
+        impl->d3d9_backbuffer.Reset();
+
+        D3DPRESENT_PARAMETERS d3dpp{};
+        d3dpp.BackBufferWidth = width;
+        d3dpp.BackBufferHeight = height;
+        d3dpp.BackBufferFormat = D3DFMT_A8R8G8B8;
+        d3dpp.BackBufferCount = kBufferCount;
+        d3dpp.MultiSampleType = D3DMULTISAMPLE_NONE;
+        d3dpp.SwapEffect = D3DSWAPEFFECT_FLIPEX;
+        d3dpp.hDeviceWindow = impl->hwnd;
+        d3dpp.Windowed = TRUE;
+        d3dpp.EnableAutoDepthStencil = FALSE;
+        d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+        if (FAILED(impl->d3d9_device->ResetEx(&d3dpp, nullptr))) {
+            d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+            impl->d3d9_device->ResetEx(&d3dpp, nullptr);
+        }
+    }
 
     if (!impl->headless_test && impl->swapchain) {
         if (active_api == Api::DirectX12) {
@@ -1007,6 +1066,37 @@ bool PresenterBridge::Present(uint32_t image_index, bool vsync, FramePacer& pace
     }
     const UINT sync_interval = vsync ? 1u : 0u;
     const UINT present_flags = (!vsync && impl->allow_tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0u;
+
+    if (active_api == Api::DirectX9) {
+        ID3D11Texture2D* src = impl->d3d11_shared_tex[image_index].Get();
+        ID3D11Texture2D* dst_interop = impl->d3d9_interop_d3d11_tex[image_index].Get();
+        if (!src || !dst_interop || !impl->d3d9_device) {
+            return false;
+        }
+        impl->d3d11_context->CopyResource(dst_interop, src);
+        impl->d3d11_context->Flush();
+
+        if (!impl->headless_test) {
+            ComPtr<IDirect3DSurface9> backbuffer;
+            HRESULT hr = impl->d3d9_device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO,
+                                                          backbuffer.GetAddressOf());
+            if (SUCCEEDED(hr) && backbuffer) {
+                ComPtr<IDirect3DSurface9> src_surface;
+                if (SUCCEEDED(impl->d3d9_shared_tex[image_index]->GetSurfaceLevel(
+                        0, src_surface.GetAddressOf())) && src_surface) {
+                    impl->d3d9_device->StretchRect(src_surface.Get(), nullptr, backbuffer.Get(),
+                                                   nullptr, D3DTEXF_NONE);
+                }
+            }
+        }
+
+        pacer.Wait(target_fps, vsync, display_hz, pacer_mode);
+        HRESULT hr = S_OK;
+        if (!impl->headless_test) {
+            hr = impl->d3d9_device->PresentEx(nullptr, nullptr, nullptr, nullptr, 0);
+        }
+        return SUCCEEDED(hr) || hr == D3DERR_DEVICELOST || hr == D3DERR_DEVICENOTRESET;
+    }
 
     if (active_api == Api::DirectX11) {
         ID3D11Texture2D* src = impl->d3d11_shared_tex[image_index].Get();
