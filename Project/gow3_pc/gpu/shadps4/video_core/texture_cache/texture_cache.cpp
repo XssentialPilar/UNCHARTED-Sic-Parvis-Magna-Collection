@@ -1882,9 +1882,15 @@ void TextureCache::GarbageCollectImages() {
             next_reading = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
         }
     }
-    // Proactively evict non-visible area textures: periodically sweep stale textures
-    // that have not been drawn or touched in recent frames (~1.2 - 2 seconds),
-    // freeing VRAM before Drake enters adjacent complex rooms.
+    // Exponential Moving Average (EMA) and smooth decay tracking
+    // EMA_usage(t) = 0.05 * CurrentUsage + 0.95 * EMA_usage(t-1)
+    static double ema_used_memory = 0.0;
+    if (ema_used_memory <= 0.0) {
+        ema_used_memory = static_cast<double>(total_used_memory);
+    } else {
+        ema_used_memory = 0.05 * static_cast<double>(total_used_memory) + 0.95 * ema_used_memory;
+    }
+
     static const bool is_low_vram_target = [] {
         const char* env = std::getenv("GOW3_LOW_VRAM");
         if (env && env[0] && env[0] != '0') return true;
@@ -1897,6 +1903,7 @@ void TextureCache::GarbageCollectImages() {
         return false;
     }();
     const bool is_low_vram = is_low_vram_target || (total_used_memory <= (u64{2560} << 20));
+    // Smooth trim for non-visible textures every 30/60 ticks with hysteresis
     const bool periodic_stale_sweep = (gc_tick % (is_low_vram ? 30 : 60) == 0);
     if (total_used_memory < trigger_gc_memory && !periodic_stale_sweep) {
         return;
@@ -1906,32 +1913,45 @@ void TextureCache::GarbageCollectImages() {
     bool aggresive = false;
     u64 ticks_to_destroy = 0;
     size_t num_deletions = 0;
+    size_t evicted_bytes_this_pass = 0;
+    const bool smooth_decay_active = (total_used_memory < critical_gc_memory);
+    constexpr size_t kMaxSmoothEvictBytes = 3 * 1024 * 1024; // Amortized quota: max ~3.0 MB / frame
 
     const auto configure = [&](bool allow_aggressive) {
         pressured = total_used_memory >= pressure_gc_memory;
         aggresive = allow_aggressive && total_used_memory >= critical_gc_memory;
-        if (total_used_memory < trigger_gc_memory) {
-            // Periodic stale sweep: actively reclaim textures from non-visible areas
-            // that have been untouched for ~1.2 - 2 seconds (75-120 ticks).
-            ticks_to_destroy = is_low_vram ? 75 : 120;
-            num_deletions = is_low_vram ? 32 : 16;
+        if (aggresive) {
+            ticks_to_destroy = is_low_vram ? 12 : GcAge(true, true);
+            num_deletions = is_low_vram ? 48 : 32;
+        } else if (pressured) {
+            ticks_to_destroy = is_low_vram ? 35 : GcAge(true, false);
+            num_deletions = is_low_vram ? 8 : 6;
+        } else if (total_used_memory < trigger_gc_memory) {
+            // Smooth decay: actively reclaim non-visible area textures untouched for > 60-90 ticks (~1-1.5s)
+            // Amortized quota: limited to 2 to 4 textures or ~3.0 MB per frame to prevent frametime spikes
+            ticks_to_destroy = is_low_vram ? 60 : 90;
+            num_deletions = is_low_vram ? 4 : 2;
         } else {
-            ticks_to_destroy = GcAge(pressured, aggresive);
-            if (is_low_vram) {
-                ticks_to_destroy = aggresive ? 12 : (pressured ? 40 : 80);
-                num_deletions = aggresive ? 64 : (pressured ? 32 : 24);
-            } else {
-                num_deletions = aggresive ? 64 : (pressured ? 32 : 16);
-            }
+            // Normal amortized trimming above trigger
+            ticks_to_destroy = is_low_vram ? 60 : GcAge(false, false);
+            num_deletions = is_low_vram ? 4 : 3;
         }
     };
     const auto clean_up = [&](ImageId image_id) {
         if (num_deletions == 0) {
             return true;
         }
-        --num_deletions;
+        if (smooth_decay_active && evicted_bytes_this_pass >= kMaxSmoothEvictBytes) {
+            return true; // Smooth amortized quota reached for this frame: yield to next frame
+        }
         auto& image = slot_images[image_id];
         if (image.lru_touched_tick == gc_tick) {
+            return false;
+        }
+        // Strict visibility & distance filter:
+        // Textures untouched for > 60 ticks (~1 sec) belong to non-visible or left areas
+        const bool is_non_visible = (gc_tick > image.lru_touched_tick + 60);
+        if (!pressured && !aggresive && !is_non_visible && total_used_memory < trigger_gc_memory) {
             return false;
         }
         ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
@@ -1952,6 +1972,9 @@ void TextureCache::GarbageCollectImages() {
             DownloadImageMemory(image_id, true);
             ++gc_downloads;
         }
+        const size_t image_bytes = Common::AlignUp(image.info.guest_size, 1024);
+        evicted_bytes_this_pass += image_bytes;
+        --num_deletions;
         ++gc_evictions;
         FreeImage(image_id);
         if (total_used_memory < critical_gc_memory) {

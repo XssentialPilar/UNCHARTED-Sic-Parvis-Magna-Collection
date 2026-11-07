@@ -1,0 +1,482 @@
+<Window x:Class="UnchartedLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Uncharted: Sic Parvis Magna Collection"
+        Width="1280" Height="720"
+        MinWidth="1024" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#0B0D10"
+        WindowStyle="SingleBorderWindow"
+        Foreground="#EAEAEA">
+
+    <Window.Resources>
+        <!-- Button styles -->
+        <Style x:Key="NavButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#C2B294"/>
+            <Setter Property="FontFamily" Value="Cinzel, Georgia, serif"/>
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#F2D179"/>
+                                <Setter TargetName="border" Property="Background" Value="#22E5C158"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PresetButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#22000000"/>
+            <Setter Property="Foreground" Value="#C2B294"/>
+            <Setter Property="FontFamily" Value="Segoe UI, sans-serif"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Margin" Value="4,0"/>
+            <Setter Property="BorderBrush" Value="#44C2B294"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FFF"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#E5C158"/>
+                                <Setter TargetName="border" Property="Background" Value="#33E5C158"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PlayButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#E5C158"/>
+            <Setter Property="Foreground" Value="#1A1508"/>
+            <Setter Property="FontFamily" Value="Cinzel, Georgia, serif"/>
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="32,14"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FFDF85"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <!-- Background Desk Map -->
+        <Image Source="Assets/spm_desk_bg.png" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+        <!-- Ambient Dark Vignette Overlay -->
+        <Rectangle Fill="#880A0C0F"/>
+
+        <!-- Main Layout Frame with Golden Border -->
+        <Border Margin="18" BorderBrush="#554420" BorderThickness="1.5" CornerRadius="6" Background="#CC11141A">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="90"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="70"/>
+                </Grid.RowDefinitions>
+
+                <!-- HEADER -->
+                <Grid Grid.Row="0" Margin="30,15,30,0">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="UNCHARTED" FontFamily="Cinzel, Georgia, serif" FontSize="28" FontWeight="Bold" Foreground="#F5F5F5"/>
+                        <TextBlock Text="SIC PARVIS MAGNA COLLECTION" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="SemiBold" Foreground="#E5C158" Margin="1,2,0,0"/>
+                    </StackPanel>
+
+                    <!-- QUICK PRESETS -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock Text="PREAJUSTES:" FontFamily="Segoe UI" FontSize="11" FontWeight="Bold" Foreground="#888" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <Button Content="iGPU" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_iGPU"/>
+                        <Button Content="BAJO 1GB" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Low"/>
+                        <Button Content="MEDIO 2GB ★" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Med"/>
+                        <Button Content="ALTO" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_High"/>
+                        <Button Content="ULTRA" Style="{StaticResource PresetButtonStyle}" Click="OnPreset_Ultra"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Divider -->
+                <Rectangle Grid.Row="0" VerticalAlignment="Bottom" Height="1" Fill="#33554420" Margin="25,0,25,0"/>
+
+                <!-- BODY: SIDEBAR + CONTENT -->
+                <Grid Grid.Row="1" Margin="25,15,25,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="230"/>
+                        <ColumnDefinition Width="1"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- LEFT NAV MENU -->
+                    <StackPanel Grid.Column="0" Margin="0,10,15,0">
+                        <Button x:Name="BtnNavExpeditions" Content="EXPEDICIONES" Style="{StaticResource NavButtonStyle}" Click="OnNavExpeditions"/>
+                        <Button x:Name="BtnNavGraphics" Content="GRÁFICOS Y VRAM" Style="{StaticResource NavButtonStyle}" Click="OnNavGraphics"/>
+                        <Button x:Name="BtnNavDisplay" Content="PANTALLA Y ESCALADO" Style="{StaticResource NavButtonStyle}" Click="OnNavDisplay"/>
+                        <Button x:Name="BtnNavInput" Content="CONTROLES Y JUEGO" Style="{StaticResource NavButtonStyle}" Click="OnNavInput"/>
+                        <Button x:Name="BtnNavLogs" Content="TELEMETRÍA Y LOGS" Style="{StaticResource NavButtonStyle}" Click="OnNavLogs"/>
+                        <Separator Margin="0,15,0,15" Background="#33554420"/>
+                        <Button Content="SALIR" Style="{StaticResource NavButtonStyle}" Foreground="#A85555" Click="OnQuit"/>
+                    </StackPanel>
+
+                    <!-- Vertical Separator -->
+                    <Rectangle Grid.Column="1" Fill="#33554420"/>
+
+                    <!-- TAB CONTENTS -->
+                    <Grid Grid.Column="2" Margin="25,5,10,5">
+
+                        <!-- TAB 1: EXPEDITIONS -->
+                        <Grid x:Name="TabExpeditions" Visibility="Visible">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="SELECCIONA TU EXPEDICIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,5,0,15"/>
+
+                            <!-- 3 Journals Horizontal Layout -->
+                            <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="280"/>
+                                    <ColumnDefinition Width="280"/>
+                                    <ColumnDefinition Width="280"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- PART 1 -->
+                                <Border x:Name="CardU1" Grid.Column="0" Margin="12,0" Background="#161920" BorderBrush="#E5C158" BorderThickness="2" CornerRadius="8" Cursor="Hand" MouseDown="OnSelectU1">
+                                    <Grid Margin="15">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="200"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Image Grid.Row="0" Source="Assets/spm_journal_u1_active.png" Stretch="Uniform" Margin="0,5"/>
+                                        <TextBlock Grid.Row="1" Text="PARTE I" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#E5C158" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                        <TextBlock Grid.Row="2" Text="DRAKE'S FORTUNE" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#FFF" HorizontalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- PART 2 -->
+                                <Border x:Name="CardU2" Grid.Column="1" Margin="12,0" Background="#161920" BorderBrush="#334420" BorderThickness="1" CornerRadius="8" Cursor="Hand" MouseDown="OnSelectU2">
+                                    <Grid Margin="15">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="200"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Image Grid.Row="0" Source="Assets/spm_journal_u2.png" Stretch="Uniform" Margin="0,5"/>
+                                        <TextBlock Grid.Row="1" Text="PARTE II" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#C2B294" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                        <TextBlock Grid.Row="2" Text="AMONG THIEVES" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#DDD" HorizontalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- PART 3 -->
+                                <Border x:Name="CardU3" Grid.Column="2" Margin="12,0" Background="#161920" BorderBrush="#334420" BorderThickness="1" CornerRadius="8" Cursor="Hand" MouseDown="OnSelectU3">
+                                    <Grid Margin="15">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="200"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Image Grid.Row="0" Source="Assets/spm_journal_u3.png" Stretch="Uniform" Margin="0,5"/>
+                                        <TextBlock Grid.Row="1" Text="PARTE III" FontFamily="Cinzel, Georgia, serif" FontSize="13" FontWeight="Bold" Foreground="#C2B294" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                        <TextBlock Grid.Row="2" Text="DRAKE'S DECEPTION" FontFamily="Cinzel, Georgia, serif" FontSize="15" FontWeight="Bold" Foreground="#DDD" HorizontalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Grid>
+
+                        <!-- TAB 2: GRAPHICS & VRAM -->
+                        <ScrollViewer x:Name="TabGraphics" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="0,5,15,5">
+                                <TextBlock Text="CONFIGURACIÓN DE GRÁFICOS Y GESTIÓN DE VRAM" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="API Gráfica de Presentación:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="DirectX 11 ofrece Flip-Discard por hardware" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboApi" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="DirectX 11 (Hardware Flip-Discard) ★" Tag="dx11" IsSelected="True"/>
+                                        <ComboBoxItem Content="DirectX 12 (Flip-Model)" Tag="dx12"/>
+                                        <ComboBoxItem Content="Vulkan (Nativo WSI)" Tag="vulkan"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Límite Estricto de VRAM (Cap):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Evita saturación de bus y caídas de FPS" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboVramCap" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="820 MB (Objetivo 1 GB VRAM)" Tag="820"/>
+                                        <ComboBoxItem Content="1720 MB (Objetivo 2 GB VRAM) ★" Tag="1720" IsSelected="True"/>
+                                        <ComboBoxItem Content="3200 MB (Objetivo 4 GB VRAM)" Tag="3200"/>
+                                        <ComboBoxItem Content="6144 MB (Objetivo 8 GB+ VRAM)" Tag="6144"/>
+                                        <ComboBoxItem Content="Sin límite (Auto)" Tag="0"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Calidad de Texturas:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Ajuste de mipmaps y LOD Bias" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboTexQuality" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Baja (Ahorro máximo VRAM)" Tag="low"/>
+                                        <ComboBoxItem Content="Media (Recomendado 2GB) ★" Tag="medium" IsSelected="True"/>
+                                        <ComboBoxItem Content="Alta" Tag="high"/>
+                                        <ComboBoxItem Content="Ultra (Resolución Completa)" Tag="ultra"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Calidad de Sombras:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Resolución de cascadas solares y luces" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboShadowQuality" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Baja" Tag="low"/>
+                                        <ComboBoxItem Content="Media ★" Tag="medium" IsSelected="True"/>
+                                        <ComboBoxItem Content="Alta" Tag="high"/>
+                                        <ComboBoxItem Content="Ultra" Tag="ultra"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Oclusión Ambiental (SSAO):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Sombreado de esquinas y profundidad" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboSsao" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Desactivado" Tag="off"/>
+                                        <ComboBoxItem Content="Media Resolución (Half)" Tag="half"/>
+                                        <ComboBoxItem Content="Completa (Full) ★" Tag="full" IsSelected="True"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Filtrado Anisótropo:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Nitidez en texturas con ángulo de cámara" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboAniso" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="1x (Bilineal)" Tag="1"/>
+                                        <ComboBoxItem Content="2x" Tag="2"/>
+                                        <ComboBoxItem Content="4x" Tag="4"/>
+                                        <ComboBoxItem Content="8x" Tag="8"/>
+                                        <ComboBoxItem Content="16x (Máxima Nitidez) ★" Tag="16" IsSelected="True"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <CheckBox x:Name="ChkFullResTex" Content="Permitir Texturas a Resolución Completa (requiere >2GB VRAM)" Margin="0,8,0,4" Foreground="#CCC" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                                <CheckBox x:Name="ChkHiresShadows" Content="Sombras en Alta Resolución (requiere GPU dedicada)" Margin="0,4,0,8" Foreground="#CCC" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- TAB 3: DISPLAY & SCALING -->
+                        <ScrollViewer x:Name="TabDisplay" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="0,5,15,5">
+                                <TextBlock Text="RESOLUCIÓN, ESCALADO Y SINCRONIZACIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Resolución de Renderizado:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Tamaño del búfer interno del motor" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboResolution" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="1280x720 (720p HD)" Tag="1280x720"/>
+                                        <ComboBoxItem Content="1600x900 (900p)" Tag="1600x900"/>
+                                        <ComboBoxItem Content="1920x1080 (1080p FHD) ★" Tag="1920x1080" IsSelected="True"/>
+                                        <ComboBoxItem Content="2560x1440 (1440p QHD)" Tag="2560x1440"/>
+                                        <ComboBoxItem Content="3840x2160 (4K UHD)" Tag="3840x2160"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Tecnología de Escalado (Upscaler):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Fidelidad visual con ahorro de cálculo" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboUpscaler" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Desactivado (Nativo) ★" Tag="off" IsSelected="True"/>
+                                        <ComboBoxItem Content="AMD FidelityFX Super Resolution 3.1" Tag="fsr3"/>
+                                        <ComboBoxItem Content="AMD FidelityFX Super Resolution 4.0" Tag="fsr4"/>
+                                        <ComboBoxItem Content="NVIDIA DLSS / DLAA (RTX)" Tag="dlss"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Límite de Fotogramas (FPS):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Tope de tasa de refresco" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboFpsLimit" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="30 FPS (Modo Batería)" Tag="30"/>
+                                        <ComboBoxItem Content="60 FPS (Estándar Fluido) ★" Tag="60" IsSelected="True"/>
+                                        <ComboBoxItem Content="90 FPS" Tag="90"/>
+                                        <ComboBoxItem Content="120 FPS (Alta Tasa)" Tag="120"/>
+                                        <ComboBoxItem Content="Ilimitado (Sin tope)" Tag="0"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Temporizador / Frame Pacer:" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Estabilidad y precisión submilisegundo" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboFramePacer" Grid.Column="1" SelectionChanged="OnSettingChanged">
+                                        <ComboBoxItem Content="Hybrid Sub-ms Pacer (Recomendado) ★" Tag="hybrid" IsSelected="True"/>
+                                        <ComboBoxItem Content="Waitable Timer (Baja Latencia)" Tag="waitable"/>
+                                        <ComboBoxItem Content="High-Resolution Sleep" Tag="sleep"/>
+                                        <ComboBoxItem Content="Desactivado (Driver puro)" Tag="off"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <CheckBox x:Name="ChkVsync" Content="Sincronización Vertical (V-Sync activado)" Margin="0,8,0,4" Foreground="#CCC" IsChecked="True" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                                <CheckBox x:Name="ChkMotionBlur" Content="Desenfoque de Movimiento (Motion Blur)" Margin="0,4,0,4" Foreground="#CCC" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                                <CheckBox x:Name="ChkDepthOfField" Content="Profundidad de Campo (Depth of Field cinematográfico)" Margin="0,4,0,8" Foreground="#CCC" Checked="OnSettingChanged" Unchecked="OnSettingChanged"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- TAB 4: INPUT & CONTROLS -->
+                        <ScrollViewer x:Name="TabInput" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="0,5,15,5">
+                                <TextBlock Text="CONTROLES, RATÓN Y DIRECTORIO DE JUEGO" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+
+                                <TextBlock Text="Directorio de Archivos del Juego (CUSA02344):" FontWeight="Bold" Foreground="#FFF" Margin="0,8,0,2"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="120"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtGameDir" Grid.Column="0" Text="D:\D'Arby\Uncharted Game\CUSA02344" Background="#161920" Foreground="#E5C158" BorderBrush="#554420" Padding="8,6" TextChanged="OnGameDirChanged"/>
+                                    <Button Grid.Column="1" Content="BUSCAR..." Margin="8,0,0,0" Style="{StaticResource PresetButtonStyle}" Click="OnBrowseGameDir"/>
+                                </Grid>
+
+                                <TextBlock Text="Sensibilidad de Apuntado con Ratón:" FontWeight="Bold" Foreground="#FFF" Margin="0,8,0,2"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="60"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="SliderMouseSens" Grid.Column="0" Minimum="0.5" Maximum="10.0" Value="3.0" TickFrequency="0.5" IsSnapToTickEnabled="True" ValueChanged="OnMouseSensChanged"/>
+                                    <TextBlock x:Name="TxtMouseSensVal" Grid.Column="1" Text="3.0x" Foreground="#E5C158" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- TAB 5: TELEMETRY & LOGS -->
+                        <Grid x:Name="TabLogs" Visibility="Collapsed">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="REGISTRO Y TELEMETRÍA EN TIEMPO REAL" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,5,0,10"/>
+
+                            <TextBox x:Name="TxtConsole" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="#090B0E" Foreground="#95D187" FontFamily="Consolas, monospace" FontSize="12" Padding="10" BorderBrush="#33554420"/>
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                                <Button Content="VERIFICAR ARCHIVOS (1.02)" Style="{StaticResource PresetButtonStyle}" Click="OnVerifyFiles"/>
+                                <Button Content="LIMPIAR CONSOLA" Style="{StaticResource PresetButtonStyle}" Click="OnClearConsole"/>
+                            </StackPanel>
+                        </Grid>
+
+                    </Grid>
+                </Grid>
+
+                <!-- FOOTER / BOTTOM ACTION BAR -->
+                <Grid Grid.Row="2" Background="#161920" Margin="1,0,1,1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="25,0">
+                        <TextBlock x:Name="TxtReadyStatus" Text="Listo: Uncharted: Drake's Fortune" FontWeight="Bold" Foreground="#FFF" FontSize="14"/>
+                        <TextBlock x:Name="TxtFooterDetails" Text="D3D11 • 1720 MB Cap • 1080p • 60 FPS • Hybrid Pacer" Foreground="#E5C158" FontSize="12" Margin="0,2,0,0"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,25,0">
+                        <Button x:Name="BtnStop" Content="DETENER" Background="#A83333" Foreground="#FFF" FontFamily="Cinzel, Georgia, serif" FontWeight="Bold" FontSize="15" Padding="20,12" Margin="0,0,15,0" Visibility="Collapsed" Click="OnStopClicked"/>
+                        <Button x:Name="BtnPlay" Content="► JUGAR PARTE I" Style="{StaticResource PlayButtonStyle}" Click="OnPlayClicked"/>
+                    </StackPanel>
+                </Grid>
+
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
