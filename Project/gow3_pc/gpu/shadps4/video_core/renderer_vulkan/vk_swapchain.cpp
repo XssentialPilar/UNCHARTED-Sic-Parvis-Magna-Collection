@@ -42,7 +42,12 @@ Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& windo
             dxgi_bridge = std::make_unique<Gow3Dxgi::PresenterBridge>();
             if (dxgi_bridge->Initialize(instance, window.GetWindowInfo().render_surface,
                                         window.GetWidth(), window.GetHeight(), req_api)) {
-                surface_format = {vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear};
+                const auto active = dxgi_bridge->GetApi();
+                surface_format = (active == Gow3Dxgi::Api::DirectX9)
+                                     ? vk::SurfaceFormatKHR{vk::Format::eB8G8R8A8Unorm,
+                                                            vk::ColorSpaceKHR::eSrgbNonlinear}
+                                     : vk::SurfaceFormatKHR{vk::Format::eR8G8B8A8Unorm,
+                                                            vk::ColorSpaceKHR::eSrgbNonlinear};
                 use_dxgi = true;
                 vsync = Gow3Settings::Get().vsync;
             } else {

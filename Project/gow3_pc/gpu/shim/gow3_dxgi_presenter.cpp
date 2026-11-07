@@ -706,14 +706,28 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
             d3dpp.FullScreen_RefreshRateInHz = 0;
             d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
 
+            UINT d3d9_adapter = D3DADAPTER_DEFAULT;
+            if (has_luid) {
+                const UINT adapter_count = impl->d3d9ex->GetAdapterCount();
+                for (UINT a = 0; a < adapter_count; ++a) {
+                    LUID luid{};
+                    if (SUCCEEDED(impl->d3d9ex->GetAdapterLUID(a, &luid))) {
+                        if (std::memcmp(&luid, vk_luid, sizeof(LUID)) == 0) {
+                            d3d9_adapter = a;
+                            break;
+                        }
+                    }
+                }
+            }
+
             hr = impl->d3d9ex->CreateDeviceEx(
-                D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, impl->hwnd,
+                d3d9_adapter, D3DDEVTYPE_HAL, impl->hwnd,
                 D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                 &d3dpp, nullptr, impl->d3d9_device.ReleaseAndGetAddressOf());
             if (FAILED(hr)) {
                 d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
                 hr = impl->d3d9ex->CreateDeviceEx(
-                    D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, impl->hwnd,
+                    d3d9_adapter, D3DDEVTYPE_HAL, impl->hwnd,
                     D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                     &d3dpp, nullptr, impl->d3d9_device.ReleaseAndGetAddressOf());
             }
@@ -772,7 +786,7 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
                 .Height = impl->height,
                 .MipLevels = 1,
                 .ArraySize = 1,
-                .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+                .Format = (active_api == Api::DirectX9) ? DXGI_FORMAT_B8G8R8A8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM,
                 .SampleDesc = {1, 0},
                 .Usage = D3D11_USAGE_DEFAULT,
                 .BindFlags = D3D11_BIND_RENDER_TARGET,
@@ -823,7 +837,7 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
                 .Height = impl->height,
                 .MipLevels = 1,
                 .ArraySize = 1,
-                .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+                .Format = (active_api == Api::DirectX9) ? DXGI_FORMAT_B8G8R8A8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM,
                 .SampleDesc = {1, 0},
                 .Usage = D3D11_USAGE_DEFAULT,
                 .BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
@@ -906,7 +920,7 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
             .pNext = &ext_img_ci,
             .flags = 0,
             .imageType = VK_IMAGE_TYPE_2D,
-            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .format = (active_api == Api::DirectX9) ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM,
             .extent = {impl->width, impl->height, 1},
             .mipLevels = 1,
             .arrayLayers = 1,
@@ -996,10 +1010,12 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
             return false;
         }
 
+        const vk::Format effective_view_format =
+            (active_api == Api::DirectX9) ? vk::Format::eB8G8R8A8Unorm : view_format;
         auto [view_res, view] = vk_dev.createImageView(vk::ImageViewCreateInfo{
             .image = out_images[i],
             .viewType = vk::ImageViewType::e2D,
-            .format = view_format,
+            .format = effective_view_format,
             .subresourceRange = {
                 .aspectMask = vk::ImageAspectFlagBits::eColor,
                 .baseMipLevel = 0,
@@ -1170,31 +1186,37 @@ bool PresenterBridge::Present(uint32_t image_index, bool vsync, FramePacer& pace
     if (active_api == Api::DirectX9) {
         ID3D11Texture2D* src = impl->d3d11_shared_tex[image_index].Get();
         ID3D11Texture2D* dst_interop = impl->d3d9_interop_d3d11_tex[image_index].Get();
-        if (!src || !dst_interop || !impl->d3d9_device) {
+        if (!src) {
+            return false;
+        }
+        if (impl->headless_test) {
+            if (impl->d3d11_headless_target) {
+                impl->d3d11_context->CopyResource(impl->d3d11_headless_target.Get(), src);
+                impl->d3d11_context->Flush();
+            }
+            pacer.Wait(target_fps, vsync, display_hz, pacer_mode);
+            return true;
+        }
+        if (!dst_interop || !impl->d3d9_device) {
             return false;
         }
         impl->d3d11_context->CopyResource(dst_interop, src);
         impl->d3d11_context->Flush();
 
-        if (!impl->headless_test) {
-            ComPtr<IDirect3DSurface9> backbuffer;
-            HRESULT hr = impl->d3d9_device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO,
-                                                          backbuffer.GetAddressOf());
-            if (SUCCEEDED(hr) && backbuffer) {
-                ComPtr<IDirect3DSurface9> src_surface;
-                if (SUCCEEDED(impl->d3d9_shared_tex[image_index]->GetSurfaceLevel(
-                        0, src_surface.GetAddressOf())) && src_surface) {
-                    impl->d3d9_device->StretchRect(src_surface.Get(), nullptr, backbuffer.Get(),
-                                                   nullptr, D3DTEXF_NONE);
-                }
+        ComPtr<IDirect3DSurface9> backbuffer;
+        HRESULT hr = impl->d3d9_device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO,
+                                                      backbuffer.GetAddressOf());
+        if (SUCCEEDED(hr) && backbuffer) {
+            ComPtr<IDirect3DSurface9> src_surface;
+            if (SUCCEEDED(impl->d3d9_shared_tex[image_index]->GetSurfaceLevel(
+                    0, src_surface.GetAddressOf())) && src_surface) {
+                impl->d3d9_device->StretchRect(src_surface.Get(), nullptr, backbuffer.Get(),
+                                               nullptr, D3DTEXF_NONE);
             }
         }
 
         pacer.Wait(target_fps, vsync, display_hz, pacer_mode);
-        HRESULT hr = S_OK;
-        if (!impl->headless_test) {
-            hr = impl->d3d9_device->PresentEx(nullptr, nullptr, nullptr, nullptr, 0);
-        }
+        hr = impl->d3d9_device->PresentEx(nullptr, nullptr, nullptr, nullptr, 0);
         return SUCCEEDED(hr) || hr == D3DERR_DEVICELOST || hr == D3DERR_DEVICENOTRESET;
     }
 

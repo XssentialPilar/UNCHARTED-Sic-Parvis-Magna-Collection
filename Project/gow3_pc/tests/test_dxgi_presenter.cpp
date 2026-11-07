@@ -84,7 +84,8 @@ int main() {
 
         std::vector<vk::Image> images;
         std::vector<vk::ImageView> views;
-        assert(bridge.CreateSharedImages(640, 360, vk::Format::eR8G8B8A8Unorm, images, views));
+        const auto req_fmt = (api == Gow3Dxgi::Api::DirectX9) ? vk::Format::eB8G8R8A8Unorm : vk::Format::eR8G8B8A8Unorm;
+        assert(bridge.CreateSharedImages(640, 360, req_fmt, images, views));
         assert(images.size() == Gow3Dxgi::PresenterBridge::kBufferCount);
         assert(views.size() == Gow3Dxgi::PresenterBridge::kBufferCount);
         for (size_t i = 0; i < images.size(); ++i) {
