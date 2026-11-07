@@ -98,7 +98,7 @@ public class LauncherConfig
                 File.WriteAllLines(iniPath, lines);
             }
 
-            string engineConfig = $"# Uncharted Global Engine Configuration (Sic Parvis Magna Collection)\ngraphics_api={GraphicsApi}\nvram_budget_mb={VramBudgetMb}\nframe_pacer={FramePacingMode}\nfps_limit={FpsLimit}\nvsync={VSync}\ntexture_quality={TextureQuality}\nshadow_quality={ShadowQuality}\nssao_quality={SsaoQuality}\nanisotropy={Anisotropy}\nupscaler={Upscaler}\ndeferred_readback=1\nstale_readback=1\n";
+            string engineConfig = $"# Uncharted Global Engine Configuration (Sic Parvis Magna Collection)\ngraphics_api={GraphicsApi}\nvram_budget_mb={VramBudgetMb}\nframe_pacer={FramePacingMode}\nfps_limit={FpsLimit}\nvsync={VSync}\ntexture_quality={TextureQuality}\nshadow_quality={ShadowQuality}\nssao_quality={SsaoQuality}\nanisotropy={Anisotropy}\nupscaler={Upscaler}\ndeferred_readback=1\nstale_readback=0\n";
             string[] enginePaths = {
                 Path.Combine(workspaceRoot, "Project", "EngineConfig.ini"),
                 Path.Combine(workspaceRoot, "Project", "gow3.ini"),

@@ -258,7 +258,7 @@ INI_DEFAULTS = {
     "frames_queued": "1",
     "async_shaders": "1",
     "deferred_readback": "1",
-    "stale_readback": "1",
+    "stale_readback": "0",
     "fsr1": "0",
     "rcas": "1",
     "rcas_strength": "75",
@@ -1367,7 +1367,7 @@ def read_config():
     # 1. Disable default diagnostics=True (which forced GOW3_CAPTURE_ALL_BUFFERS=1 and halved FPS).
     # 2. Enable multithreaded command recording across all three games (u1, u2, u3).
     # 3. Clear stale full_res_textures/hires_shadows when low/medium quality is active.
-    # 4. Sync graphics_api, vram_budget_mb, frame_pacer, deferred_readback=1, stale_readback=1 to probe-u*.ini.
+    # 4. Sync graphics_api, vram_budget_mb, frame_pacer, deferred_readback=1, stale_readback=0 to probe-u*.ini.
     if config.get("version", 1) < 11:
         config["diagnostics"] = False
         for game in GAME_KEYS:
@@ -1382,7 +1382,7 @@ def read_config():
                 "vram_budget_mb": config["vram_budget_mb"],
                 "frame_pacer": config["frame_pacing_mode"],
                 "deferred_readback": "1",
-                "stale_readback": "1",
+                "stale_readback": "0",
                 "async_shaders": "1",
                 "frames_queued": "1",
             })
@@ -1760,7 +1760,7 @@ class Launcher:
             ),
             "frame_pacer": normalize_frame_pacer(self.config.get("frame_pacing_mode", "hybrid")),
             "deferred_readback": "1",
-            "stale_readback": "1",
+            "stale_readback": "0",
         }
         for game in GAME_KEYS:
             write_ini(game, shared)
@@ -1772,7 +1772,7 @@ class Launcher:
             f"graphics_api={shared['graphics_api']}\n"
             f"vram_budget_mb={shared['vram_budget_mb']}\n"
             f"frame_pacer={shared['frame_pacer']}\n"
-            f"deferred_readback=1\nstale_readback=1\n"
+            f"deferred_readback=1\nstale_readback=0\n"
         )
         for ep in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ROOT.parent / "EngineConfig.ini", user_dir() / "EngineConfig.ini"):
             try:
@@ -3308,7 +3308,7 @@ class Launcher:
         values["vram_budget_mb"] = preset["vram_budget_mb"]
         values["frame_pacer"] = normalize_frame_pacer(self.config.get("frame_pacing_mode", "hybrid"))
         values["deferred_readback"] = "1"
-        values["stale_readback"] = "1"
+        values["stale_readback"] = "0"
 
         self.ini.update(values)
         write_config(self.config)
@@ -3652,7 +3652,7 @@ class Launcher:
         self.ini["vram_budget_mb"] = vram_cap
         self.ini["frame_pacer"] = pacer
         self.ini["deferred_readback"] = "1"
-        self.ini["stale_readback"] = "1"
+        self.ini["stale_readback"] = "0"
 
         self.save_ini({k: self.ini.get(k, v) for k, v in INI_DEFAULTS.items()})
         self.sync_global_to_all_inis()

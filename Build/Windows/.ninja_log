@@ -532,3 +532,85 @@
 112	8967	8157455891501596	CMakeFiles/gow3gpu.dir/shadps4/video_core/texture_cache/texture_cache.cpp.obj	9929107faad966f6
 8967	9156	8157455980060045	libgow3gpu.a	e3d91a3f80d65bba
 9156	9374	8157455981952010	gow3-probe.exe	efdd907f57bf21e7
+68	558	8157480531228279	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/cmake.verify_globs	3a03591e36fc525a
+701	6785	8157480537552326	CMakeFiles/gow3gpu.dir/shim/apds/apds.cpp.obj	a247438c43821bd
+708	8958	8157480537626160	CMakeFiles/gow3gpu.dir/shim/gow3_dxgi_presenter.cpp.obj	4b0238c1249d66f8
+693	18632	8157480537476038	CMakeFiles/gow3gpu.dir/shadps4/video_core/texture_cache/texture_cache.cpp.obj	9929107faad966f6
+18632	18937	8157480716864425	libgow3gpu.a	e3d91a3f80d65bba
+18938	19234	8157480719921579	gow3-probe.exe	efdd907f57bf21e7
+39	112	8157494817102498	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/cmake.verify_globs	3a03591e36fc525a
+26	75	8157497892312176	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/cmake.verify_globs	3a03591e36fc525a
+268	944	8157497901211138	include/video_core/host_shaders/tiling_micro_8_comp.h	18766ee0678ca144
+268	944	8157497901211138	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_micro_8_comp.h	18766ee0678ca144
+196	945	8157497901221112	include/video_core/host_shaders/tiling_macro_96_comp.h	e73bebc68830a497
+196	945	8157497901221112	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_macro_96_comp.h	e73bebc68830a497
+250	946	8157497901211138	include/video_core/host_shaders/tiling_micro_64_comp.h	8ee0f060c00af0f5
+250	946	8157497901211138	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_micro_64_comp.h	8ee0f060c00af0f5
+209	949	8157497901211138	include/video_core/host_shaders/tiling_micro_128_comp.h	29d58dd681d08c2f
+209	949	8157497901211138	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_micro_128_comp.h	29d58dd681d08c2f
+236	952	8157497901373551	include/video_core/host_shaders/tiling_micro_32_comp.h	efbe9be7a5aedca1
+236	952	8157497901373551	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_micro_32_comp.h	efbe9be7a5aedca1
+170	954	8157497901413553	include/video_core/host_shaders/tiling_macro_64_comp.h	434ee552a7e44e61
+170	954	8157497901413553	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_macro_64_comp.h	434ee552a7e44e61
+136	963	8157497901473602	include/video_core/host_shaders/tiling_macro_128_comp.h	4da98e63dc58d44e
+136	963	8157497901473602	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_macro_128_comp.h	4da98e63dc58d44e
+223	964	8157497901505984	include/video_core/host_shaders/tiling_micro_16_comp.h	dbfdc0d857ca59a2
+223	964	8157497901505984	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_micro_16_comp.h	dbfdc0d857ca59a2
+182	968	8157497901563419	include/video_core/host_shaders/tiling_macro_8_comp.h	5fc9b6c0c3218a43
+182	968	8157497901563419	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_macro_8_comp.h	5fc9b6c0c3218a43
+156	977	8157497901638886	include/video_core/host_shaders/tiling_macro_32_comp.h	dacde58bf6a738d5
+156	977	8157497901638886	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_macro_32_comp.h	dacde58bf6a738d5
+285	978	8157497901655928	include/video_core/host_shaders/tiling_micro_96_comp.h	7bb06723788f8294
+285	978	8157497901655928	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_micro_96_comp.h	7bb06723788f8294
+146	997	8157497901863459	include/video_core/host_shaders/tiling_macro_16_comp.h	1e3105ed29000a2b
+146	997	8157497901863459	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/include/video_core/host_shaders/tiling_macro_16_comp.h	1e3105ed29000a2b
+1100	3856	8157497903050547	CMakeFiles/gow3gpu.dir/shim/gow3_orbs.cpp.obj	a88906a4ce9881fd
+1062	3944	8157497902671817	CMakeFiles/gow3gpu.dir/shim/gow3_actors.cpp.obj	cbe2ad7ee841d207
+1126	4753	8157497903316788	CMakeFiles/gow3gpu.dir/shim/gow3_settings.cpp.obj	7b9671c5cf3701d7
+1089	4989	8157497902946813	CMakeFiles/gow3gpu.dir/shim/gow3_mouse.cpp.obj	df64ca298ec7c242
+998	12670	8157497902035651	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_fsr4.cpp.obj	ea2b8d8fc350c41b
+1007	14072	8157497902129159	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_object_motion.cpp.obj	bbf6bb1e2a0bfac6
+1070	14162	8157497902754821	CMakeFiles/gow3gpu.dir/shim/gow3_dxgi_presenter.cpp.obj	4b0238c1249d66f8
+1055	14167	8157497902609669	CMakeFiles/gow3gpu.dir/shadps4/video_core/texture_cache/tile_manager.cpp.obj	426ac75eb398cf02
+1048	14275	8157497902529678	CMakeFiles/gow3gpu.dir/shadps4/video_core/texture_cache/sampler.cpp.obj	f5beab9280da340e
+1031	14476	8157497902364049	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_swapchain.cpp.obj	5709946f35c40d85
+3944	14902	8157497931501243	CMakeFiles/gow3gpu.dir/shim/window.cpp.obj	42fc37f19cfdc209
+1116	15147	8157497903210468	CMakeFiles/gow3gpu.dir/shim/gow3_overlay.cpp.obj	c9551d38160747e7
+1039	17576	8157497902454042	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp.obj	373f291d1e7cf007
+1023	20046	8157497902290284	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_presenter.cpp.obj	6468cdac2e0c48e3
+3856	22073	8157497930621046	CMakeFiles/gow3gpu.dir/shim/gow3gpu.cpp.obj	1928345e0db844d5
+1015	22679	8157497902201751	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp.obj	dab3539d14cad411
+4754	22739	8157497939586388	CMakeFiles/gow3gpu.dir/shadps4/core/libraries/videoout/driver.cpp.obj	5c397a0aa2f2e480
+22739	22983	8157498119446497	libgow3gpu.a	e3d91a3f80d65bba
+22984	23241	8157498121898233	gow3-probe.exe	efdd907f57bf21e7
+34	90	8157498448001163	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/cmake.verify_globs	3a03591e36fc525a
+178	389	8157498449441340	CMakeFiles/gow3-play.dir/C_/Users/DiegoPorro/Downloads/Uncharted_TNDC/Project/gow3_pc/packaging/windows/play.rc.obj	d62d49fbbb487359
+159	391	8157498449245858	CMakeFiles/gow3-gpu-capabilities.dir/C_/Users/DiegoPorro/Downloads/Uncharted_TNDC/Project/gow3_pc/packaging/windows/gow3-gpu-capabilities.rc.obj	b8de78ba5f1fe9d1
+152	476	8157498449174353	CMakeFiles/gow3-gpu-capabilities.dir/C_/Users/DiegoPorro/Downloads/Uncharted_TNDC/Project/gow3_pc/tools/gpu_capabilities.c.obj	474bc94f3f8043cd
+476	665	8157498452419723	gow3-gpu-capabilities.exe	2f5abeba50ef0d3d
+169	795	8157498449346905	CMakeFiles/gow3-play.dir/C_/Users/DiegoPorro/Downloads/Uncharted_TNDC/Project/gow3_pc/packaging/windows/play.c.obj	ac5a3b8e4ab27af9
+795	993	8157498455604748	gow3-play.exe	93833659e0d1ff75
+185	1389	8157498449505467	CMakeFiles/cheat-hook-test.dir/C_/Users/DiegoPorro/Downloads/Uncharted_TNDC/Project/gow3_pc/tests/test_cheat_hook.cpp.obj	45ea2ceee9b4442b
+1389	1512	8157498461543889	cheat-hook-test.exe	75f989a4c33eb8ad
+26	70	8157500149072801	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/cmake.verify_globs	3a03591e36fc525a
+177	1699	8157500150578254	CMakeFiles/gow3gpu.dir/shim/gow3_orbs.cpp.obj	a88906a4ce9881fd
+149	1710	8157500150297916	CMakeFiles/gow3gpu.dir/shim/gow3_actors.cpp.obj	cbe2ad7ee841d207
+201	2333	8157500150818048	CMakeFiles/gow3gpu.dir/shim/gow3_settings.cpp.obj	7b9671c5cf3701d7
+167	2394	8157500150477992	CMakeFiles/gow3gpu.dir/shim/gow3_mouse.cpp.obj	df64ca298ec7c242
+228	7776	8157500151087739	CMakeFiles/gow3gpu.dir/shim/window.cpp.obj	42fc37f19cfdc209
+103	7926	8157500149834840	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_fsr4.cpp.obj	ea2b8d8fc350c41b
+159	8455	8157500150398012	CMakeFiles/gow3gpu.dir/shim/gow3_dxgi_presenter.cpp.obj	4b0238c1249d66f8
+110	9133	8157500149910076	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_object_motion.cpp.obj	bbf6bb1e2a0bfac6
+133	9903	8157500150133875	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_swapchain.cpp.obj	5709946f35c40d85
+185	9922	8157500150657947	CMakeFiles/gow3gpu.dir/shim/gow3_overlay.cpp.obj	c9551d38160747e7
+141	11987	8157500150207812	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_temporal_upscaler.cpp.obj	373f291d1e7cf007
+125	14309	8157500150053882	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_presenter.cpp.obj	6468cdac2e0c48e3
+1699	14655	8157500165800241	CMakeFiles/gow3gpu.dir/shadps4/core/libraries/videoout/driver.cpp.obj	5c397a0aa2f2e480
+216	15602	8157500150967728	CMakeFiles/gow3gpu.dir/shim/gow3gpu.cpp.obj	1928345e0db844d5
+117	16120	8157500149973868	CMakeFiles/gow3gpu.dir/shadps4/video_core/renderer_vulkan/vk_pipeline_cache.cpp.obj	dab3539d14cad411
+16120	16292	8157500310004959	libgow3gpu.a	e3d91a3f80d65bba
+16293	16497	8157500311730467	gow3-probe.exe	efdd907f57bf21e7
+32	84	8157500725488745	C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/cmake.verify_globs	3a03591e36fc525a
+85	1119	8157500726007658	CMakeFiles/graphics-settings-test.dir/C_/Users/DiegoPorro/Downloads/Uncharted_TNDC/Project/gow3_pc/tests/test_graphics_settings.cpp.obj	e92f2c2d8073bbe6
+91	1234	8157500726067684	CMakeFiles/graphics-settings-test.dir/shim/gow3_settings.cpp.obj	cbe6b403afdedab9
+1235	1343	8157500737508801	graphics-settings-test.exe	1a936b153c38fb37

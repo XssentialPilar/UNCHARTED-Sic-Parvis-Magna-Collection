@@ -80,7 +80,7 @@ struct Values {
     std::atomic<int> render_resolution{0};
     std::atomic<int> engine_fps{120};
     std::atomic<bool> deferred_readback{true};
-    std::atomic<bool> stale_readback{true};
+    std::atomic<bool> stale_readback{false};
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
@@ -88,7 +88,7 @@ struct Values {
     /// The engine rate this launch really runs at (run.py's GOW3_ENGINE_FPS): 60 when the frame
     /// rate patch does not apply to this game build.
     std::atomic<int> applied_engine_fps{120};
-    bool startup_deferred_readback = true, startup_stale_readback = true;
+    bool startup_deferred_readback = true, startup_stale_readback = false;
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};
@@ -135,7 +135,7 @@ struct Values {
     /// SPM presentation API (0 = vulkan, 1 = dx11, 2 = dx12), strict VRAM budget cap in MiB,
     /// and frame pacer mode (0 = hybrid, 1 = timer, 2 = spin, 3 = off).
     std::atomic<int> graphics_api{1}; // 1 = dx11 by default
-    std::atomic<int> vram_budget_mb{1720}; // 1720 MiB default budget
+    std::atomic<int> vram_budget_mb{0}; // 0 = auto / physical VRAM budget
     std::atomic<int> frame_pacer_mode{0};
 
     /// Startup settings for the explicit GOW3_RENDER_RES compatibility patch only.

@@ -157,11 +157,11 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
         .compareOp = sampler_compare_override == 1   ? vk::CompareOp::eNever
                      : sampler_compare_override == 2 ? vk::CompareOp::eAlways
                                                       : LiverpoolToVK::DepthCompare(sampler.depth_compare_func),
-        .minLod = effective_min_lod,
+        .minLod = sampler.MinLod(),
         // gow3 1 Nov 2026: a garbage S# (resource table slots holding other data) can have
         // min LOD > max LOD, which Vulkan forbids (VUID-VkSamplerCreateInfo-maxLod-01973). Real
         // S#s never do. GOW3_TSHARP_GUARD=0: as given (tests).
-        .maxLod = guard_lod ? std::max(effective_min_lod, sampler.MaxLod()) : sampler.MaxLod(),
+        .maxLod = guard_lod ? std::max(sampler.MinLod(), sampler.MaxLod()) : sampler.MaxLod(),
         .borderColor = border_color,
         .unnormalizedCoordinates = false, // Handled in shader due to Vulkan limitations.
     };

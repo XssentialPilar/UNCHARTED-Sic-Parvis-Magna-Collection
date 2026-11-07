@@ -4,4 +4,7 @@ Diagnostics/Sessions/*
 analysis/
 __pycache__/
 *.pyc
-
+Distribution/Uncharted/user/
+Build/Windows/cheat-hook-test.exe
+Build/Windows/CMakeFiles/cheat-hook-test.dir/
+Build/Windows/Testing/

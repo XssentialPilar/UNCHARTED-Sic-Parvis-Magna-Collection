@@ -293,7 +293,8 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
         .offset = staging.offset,
         .range = info.guest_size,
     };
-    const auto dim_x = static_cast<u32>((info.guest_size / (info.num_bits / 8)) / 64);
+    const auto total_elements = static_cast<u32>(info.guest_size / (info.num_bits / 8));
+    const auto dim_x = (total_elements + 63) / 64;
     // gow3: recorded with copies of the descriptor infos (threaded recording).
     RecordTilingDispatch(GetTilingPipeline(info, false), tiled_buffer_info, linear_buffer_info,
                          params_buffer_info, dim_x);
@@ -353,7 +354,8 @@ void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buff
         .offset = staging.offset,
         .range = info.guest_size,
     };
-    const auto dim_x = static_cast<u32>((info.guest_size / (info.num_bits / 8)) / 64);
+    const auto total_elements = static_cast<u32>(info.guest_size / (info.num_bits / 8));
+    const auto dim_x = (total_elements + 63) / 64;
     // gow3: recorded with copies of the descriptor infos (threaded recording).
     RecordTilingDispatch(GetTilingPipeline(info, true), tiled_buffer_info, linear_buffer_info,
                          params_buffer_info, dim_x);
