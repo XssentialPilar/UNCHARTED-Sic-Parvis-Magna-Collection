@@ -1876,9 +1876,9 @@ void TextureCache::GarbageCollectImages() {
             }
             if (budget != 0) {
                 // Strict 1 GB target ceiling: 859,832,320 bytes (~820 MB effective physical cap)
-                // Applied specifically when budget <= 1024 MB
+                // Applied specifically when explicitly in low VRAM mode or forced budget <= 1024 MB
                 constexpr u64 kStrict1GbCapBytes = 859832320ULL;
-                if (budget <= (u64{1024} << 20)) {
+                if (budget <= (u64{1024} << 20) && (low_vram_flag || (forced_budget && forced_budget <= (u64{1024} << 20)))) {
                     budget = kStrict1GbCapBytes;
                 }
                 if (budget <= (u64{2560} << 20)) {

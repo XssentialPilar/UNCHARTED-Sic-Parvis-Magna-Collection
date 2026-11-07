@@ -823,7 +823,7 @@ def job_sleep_enabled(executable=None):
 # on 4 threads Spin starves the game (U2 85 -> 4.5 FPS, U3 119 -> 5.9). Auto: Spin from 8 logical
 # CPUs in Uncharted 1. Uncharted 2 and 3 keep Sleep (0.8.0): nothing measured a gain from Spin
 # there (8 threads: U2 1% low 105 -> 83; 17 Oct, 16 cores: about 2% fewer FPS).
-JOB_SPIN_MIN_THREADS = {"u1": 8}
+JOB_SPIN_MIN_THREADS = {"u1": 16}
 
 
 def host_hardware_threads():
@@ -1569,8 +1569,8 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     else:
         api = "dx11"
 
-    ini_vram = ini_value(settings_file, "vram_budget_mb", "1720")
-    raw_vram_budget = (os.environ.get("GOW3_VRAM_BUDGET_MB") or ini_vram or "1720").strip()
+    ini_vram = ini_value(settings_file, "vram_budget_mb", "0")
+    raw_vram_budget = (os.environ.get("GOW3_VRAM_BUDGET_MB") or ini_vram or "0").strip()
     vram_budget_mb = int(raw_vram_budget) if raw_vram_budget.isdigit() else 0
 
     ini_pacer = ini_value(settings_file, "frame_pacer", "hybrid")

@@ -257,9 +257,11 @@ struct PresenterBridge::Impl {
     HMODULE d3d11_module = nullptr;
     HMODULE d3d12_module = nullptr;
 
+    ComPtr<IDXGIFactory1> factory1;
     ComPtr<IDXGIFactory2> factory2;
     ComPtr<IDXGIAdapter1> adapter1;
     ComPtr<IDXGIAdapter3> adapter3;
+    ComPtr<IDXGISwapChain> swapchain;
     ComPtr<IDXGISwapChain1> swapchain1;
     ComPtr<IDXGISwapChain3> swapchain3;
 
@@ -375,14 +377,15 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
     const auto create_factory = reinterpret_cast<Impl::CreateDXGIFactory1Fn>(
         GetProcAddress(impl->dxgi_module, "CreateDXGIFactory1"));
     if (!create_factory ||
-        FAILED(create_factory(__uuidof(IDXGIFactory2),
-                              reinterpret_cast<void**>(impl->factory2.GetAddressOf())))) {
+        FAILED(create_factory(__uuidof(IDXGIFactory1),
+                              reinterpret_cast<void**>(impl->factory1.GetAddressOf())))) {
         std::printf("GPU: CreateDXGIFactory1 failed; falling back to Vulkan WSI\n");
         return false;
     }
+    (void)impl->factory1.As(&impl->factory2);
 
     ComPtr<IDXGIFactory5> factory5;
-    if (SUCCEEDED(impl->factory2.As(&factory5))) {
+    if (impl->factory2 && SUCCEEDED(impl->factory2.As(&factory5))) {
         BOOL tearing = FALSE;
         if (SUCCEEDED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing,
                                                     sizeof(tearing)))) {
@@ -396,7 +399,7 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
     const bool has_luid = vk_instance.GetDeviceLuid(vk_luid);
     for (UINT idx = 0;; ++idx) {
         ComPtr<IDXGIAdapter1> candidate;
-        if (impl->factory2->EnumAdapters1(idx, candidate.GetAddressOf()) == DXGI_ERROR_NOT_FOUND) {
+        if (impl->factory1->EnumAdapters1(idx, candidate.GetAddressOf()) == DXGI_ERROR_NOT_FOUND) {
             break;
         }
         DXGI_ADAPTER_DESC1 desc{};
@@ -466,16 +469,53 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
         }
 
         if (!impl->headless_test) {
-            hr = impl->factory2->CreateSwapChainForHwnd(impl->d3d11_device.Get(), impl->hwnd,
-                                                        &sc_desc, nullptr, nullptr,
-                                                        impl->swapchain1.GetAddressOf());
-            if (FAILED(hr) || !impl->swapchain1) {
+            bool sc_created = false;
+            if (impl->factory2) {
+                hr = impl->factory2->CreateSwapChainForHwnd(impl->d3d11_device.Get(), impl->hwnd,
+                                                            &sc_desc, nullptr, nullptr,
+                                                            impl->swapchain1.GetAddressOf());
+                if (FAILED(hr)) {
+                    DXGI_SWAP_CHAIN_DESC1 sc_desc_seq = sc_desc;
+                    sc_desc_seq.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+                    hr = impl->factory2->CreateSwapChainForHwnd(impl->d3d11_device.Get(), impl->hwnd,
+                                                                &sc_desc_seq, nullptr, nullptr,
+                                                                impl->swapchain1.GetAddressOf());
+                }
+                if (SUCCEEDED(hr) && impl->swapchain1) {
+                    (void)impl->swapchain1.As(&impl->swapchain);
+                    sc_created = true;
+                }
+            }
+            if (!sc_created) {
+                DXGI_SWAP_CHAIN_DESC legacy_desc{};
+                legacy_desc.BufferDesc.Width = impl->width;
+                legacy_desc.BufferDesc.Height = impl->height;
+                legacy_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                legacy_desc.BufferDesc.RefreshRate.Numerator = 0;
+                legacy_desc.BufferDesc.RefreshRate.Denominator = 1;
+                legacy_desc.SampleDesc.Count = 1;
+                legacy_desc.SampleDesc.Quality = 0;
+                legacy_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+                legacy_desc.BufferCount = 1;
+                legacy_desc.OutputWindow = impl->hwnd;
+                legacy_desc.Windowed = TRUE;
+                legacy_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+                legacy_desc.Flags = 0;
+
+                hr = impl->factory1->CreateSwapChain(impl->d3d11_device.Get(), &legacy_desc,
+                                                     impl->swapchain.GetAddressOf());
+                if (SUCCEEDED(hr) && impl->swapchain) {
+                    (void)impl->swapchain.As(&impl->swapchain1);
+                    sc_created = true;
+                }
+            }
+            if (!sc_created || !impl->swapchain) {
                 std::printf(
-                    "GPU: D3D11 CreateSwapChainForHwnd failed (hr=0x%08lx); falling back to Vulkan\n",
+                    "GPU: D3D11 CreateSwapChain failed (hr=0x%08lx); falling back to Vulkan\n",
                     static_cast<unsigned long>(hr));
                 return false;
             }
-            (void)impl->factory2->MakeWindowAssociation(impl->hwnd, DXGI_MWA_NO_ALT_ENTER);
+            (void)impl->factory1->MakeWindowAssociation(impl->hwnd, DXGI_MWA_NO_ALT_ENTER);
             ComPtr<IDXGIDevice1> dxgi_dev1;
             if (SUCCEEDED(impl->d3d11_device.As(&dxgi_dev1))) {
                 (void)dxgi_dev1->SetMaximumFrameLatency(1);
@@ -550,6 +590,10 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
         }
 
         if (!impl->headless_test) {
+            if (!impl->factory2) {
+                std::printf("GPU: IDXGIFactory2 required for D3D12; falling back to D3D11\n");
+                return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+            }
             hr = impl->factory2->CreateSwapChainForHwnd(impl->d3d12_queue.Get(), impl->hwnd,
                                                         &sc_desc, nullptr, nullptr,
                                                         impl->swapchain1.GetAddressOf());
@@ -559,7 +603,8 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
                     static_cast<unsigned long>(hr));
                 return false;
             }
-            (void)impl->factory2->MakeWindowAssociation(impl->hwnd, DXGI_MWA_NO_ALT_ENTER);
+            (void)impl->swapchain1.As(&impl->swapchain);
+            (void)impl->factory1->MakeWindowAssociation(impl->hwnd, DXGI_MWA_NO_ALT_ENTER);
             for (uint32_t i = 0; i < kBufferCount; ++i) {
                 if (FAILED(impl->swapchain3->GetBuffer(
                         i, __uuidof(ID3D12Resource),
@@ -911,7 +956,7 @@ bool PresenterBridge::Resize(uint32_t width, uint32_t height, vk::Format view_fo
     }
     ReleaseSharedImages(out_images, out_views);
 
-    if (!impl->headless_test && impl->swapchain1) {
+    if (!impl->headless_test && impl->swapchain) {
         if (active_api == Api::DirectX12) {
             impl->WaitD3D12Idle();
             for (auto& bb : impl->d3d12_backbuffers) {
@@ -923,8 +968,9 @@ bool PresenterBridge::Resize(uint32_t width, uint32_t height, vk::Format view_fo
             impl->d3d11_context->Flush();
         }
 
-        const HRESULT hr = impl->swapchain1->ResizeBuffers(
-            kBufferCount, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, impl->swapchain_flags);
+        const UINT buf_count = (impl->swapchain1) ? kBufferCount : 0;
+        const HRESULT hr = impl->swapchain->ResizeBuffers(
+            buf_count, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, impl->swapchain_flags);
         if (FAILED(hr)) {
             std::printf("GPU: DXGI ResizeBuffers(%ux%u) failed (hr=0x%08lx)\n", width, height,
                         static_cast<unsigned long>(hr));
@@ -975,7 +1021,7 @@ bool PresenterBridge::Present(uint32_t image_index, bool vsync, FramePacer& pace
         }
 
         ComPtr<ID3D11Texture2D> backbuffer;
-        if (FAILED(impl->swapchain1->GetBuffer(
+        if (FAILED(impl->swapchain->GetBuffer(
                 0, __uuidof(ID3D11Texture2D),
                 reinterpret_cast<void**>(backbuffer.GetAddressOf()))) ||
             !backbuffer) {
@@ -983,7 +1029,7 @@ bool PresenterBridge::Present(uint32_t image_index, bool vsync, FramePacer& pace
         }
         impl->d3d11_context->CopyResource(backbuffer.Get(), src);
         pacer.Wait(target_fps, vsync, display_hz, pacer_mode);
-        const HRESULT hr = impl->swapchain1->Present(sync_interval, present_flags);
+        const HRESULT hr = impl->swapchain->Present(sync_interval, present_flags);
         return SUCCEEDED(hr) || hr == DXGI_STATUS_OCCLUDED;
     }
 
@@ -1065,7 +1111,7 @@ bool PresenterBridge::Present(uint32_t image_index, bool vsync, FramePacer& pace
         pacer.Wait(target_fps, vsync, display_hz, pacer_mode);
         HRESULT hr = S_OK;
         if (!impl->headless_test) {
-            hr = impl->swapchain3->Present(sync_interval, present_flags);
+            hr = impl->swapchain->Present(sync_interval, present_flags);
         }
 
         const uint64_t fv = ++impl->d3d12_fence_value;

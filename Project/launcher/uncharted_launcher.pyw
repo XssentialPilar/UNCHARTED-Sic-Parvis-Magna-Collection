@@ -225,11 +225,11 @@ GRAPHICS_APIS = [
 ]
 
 VRAM_CAPS = [
+    ("0", "Auto (Native VRAM)"),
     ("820", "820 MB (1 GB)"),
     ("1720", "1720 MB (2 GB)"),
     ("3200", "3200 MB (4 GB)"),
     ("6144", "6144 MB (8 GB+)"),
-    ("0", "Auto"),
 ]
 
 FRAME_PACER_OPTIONS = [
@@ -250,7 +250,7 @@ DISTANCE_SCALES = [
 # Runtime options persisted in analysis/uncharted-user/probe-u*.ini (shared with C++ gow3_settings.cpp)
 INI_DEFAULTS = {
     "graphics_api": "dx11",
-    "vram_budget_mb": "1720",
+    "vram_budget_mb": "0",
     "frame_pacer": "hybrid",
     "display_mode": "borderless",
     "vsync": "1",
@@ -298,7 +298,7 @@ LAUNCHER_DEFAULTS = {
     "unlock": False,
     "unlock_rewards": False,
     "graphics_api": "dx11",
-    "vram_budget_mb": "1720",
+    "vram_budget_mb": "0",
     "texture_quality": "medium",
     "shadow_quality": "medium",
     "anisotropy": "16",
@@ -1276,7 +1276,7 @@ def normalize_vram_cap(value, tex_quality="medium"):
     val = str(value if value is not None else "").strip()
     if val in {"820", "1720", "3200", "6144", "0"}:
         return val
-    return {"low": "820", "medium": "1720", "high": "3200", "ultra": "6144"}.get(tex_quality, "1720")
+    return "0" 
 
 
 def read_ini(game):
@@ -4337,7 +4337,7 @@ class Launcher:
             return
         self.game_settings().update(GAME_SETTING_DEFAULTS)
         self.config.update({
-            "graphics_api": "dx11", "vram_budget_mb": "1720", "texture_quality": "medium",
+            "graphics_api": "dx11", "vram_budget_mb": "0", "texture_quality": "medium",
             "shadow_quality": "medium", "ssao_quality": "full", "frame_pacing_mode": "hybrid",
             "diagnostics": False, "full_res_textures": False, "hires_shadows": False,
         })

@@ -1292,15 +1292,20 @@ void Instance::ReportAllocatorMemory() const {
 void Instance::QueryMemory(u64& usage, u64& budget) const {
     vk::PhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_props{};
     vk::PhysicalDeviceMemoryProperties2 props = {
-        .pNext = &memory_budget_props,
+        .pNext = supports_memory_budget ? &memory_budget_props : nullptr,
     };
     physical_device.getMemoryProperties2(&props);
 
     usage = 0;
     budget = 0;
-    for (const size_t heap : valid_heaps) {
-        usage += memory_budget_props.heapUsage[heap];
-        budget += memory_budget_props.heapBudget[heap];
+    if (supports_memory_budget) {
+        for (const size_t heap : valid_heaps) {
+            usage += memory_budget_props.heapUsage[heap];
+            budget += memory_budget_props.heapBudget[heap];
+        }
+    }
+    if (budget == 0) {
+        budget = total_memory_budget;
     }
     if (const u64 cap = ConfiguredVramBudgetCapBytes(); cap != 0 && (budget == 0 || budget > cap)) {
         budget = cap;

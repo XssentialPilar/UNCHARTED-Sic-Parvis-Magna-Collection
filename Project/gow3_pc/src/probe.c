@@ -1051,6 +1051,8 @@ static int64_t find_unique_code(Segment *segments, uint64_t count, const char *p
 static float *u1_sticky_omega, *u1_sticky_speed, u1_sticky_omega0, u1_sticky_speed0;
 static uint32_t *u1_settle_stop, *u1_settle_crawl, u1_settle_stop0, u1_settle_crawl0;
 static float *u1_damp_v, *u1_damp_w, u1_damp_v0, u1_damp_w0;
+static float *u1_collision_margin, u1_collision_margin0;
+static float *u1_ledge_offset, u1_ledge_offset0;
 static int u1_physics_trace = -1;
 static ABI void u1_physics_step(float dt) {
     if (u1_physics_trace) { /* GOW3_U1_PHYSICS_TRACE=1: the step times (one step per frame?) */
@@ -1076,6 +1078,12 @@ static ABI void u1_physics_step(float dt) {
     if (u1_damp_w) {
         *u1_damp_v = powf(u1_damp_v0, scale);
         *u1_damp_w = powf(u1_damp_w0, scale);
+    }
+    if (u1_collision_margin && scale < 1.0f) {
+        *u1_collision_margin = u1_collision_margin0 * (1.0f + 0.40f * (1.0f - scale));
+    }
+    if (u1_ledge_offset && scale < 1.0f) {
+        *u1_ledge_offset = u1_ledge_offset0 * (1.0f + 0.80f * (1.0f - scale));
     }
 }
 /* The game data a rip-relative operand points at (disp32 at at+disp, next instruction at at+end), or
@@ -1144,7 +1152,33 @@ static void install_u1_physics(Segment *segments, uint64_t count) {
             !(u1_damp_v0 > 0.9f && u1_damp_v0 <= 1.0f)) u1_damp_w = NULL;
     }
     if (damping && !u1_damp_w) puts("U1 physics: artificial damping not found, not scaled");
-    if (!u1_sticky_omega && !u1_settle_stop && !u1_damp_w) return;
+
+    /* Parkour collision & ledge offset: scale dynamic capsule margin and ledge grab distance
+     * at > 60 FPS to prevent Nathan Drake from clipping into rock geometry and falling through the world. */
+    const int64_t cm = find_unique_code(segments, count, "4883c20c 4883c150 75c4 488d05???????? c5fa1008");
+    const int64_t lo = find_unique_code(segments, count, "488d05???????? c5fa1000 488d05???????? c5fa1018");
+    if (cm >= 0) {
+        u1_collision_margin = u1_physics_operand(segments, count, cm, 9, 13);
+        if (u1_collision_margin) {
+            u1_collision_margin0 = *u1_collision_margin;
+            if (!(u1_collision_margin0 >= 0.05f && u1_collision_margin0 <= 1.0f))
+                u1_collision_margin = NULL;
+        }
+    }
+    if (lo >= 0) {
+        u1_ledge_offset = u1_physics_operand(segments, count, lo, 3, 7);
+        if (u1_ledge_offset) {
+            u1_ledge_offset0 = *u1_ledge_offset;
+            if (!(u1_ledge_offset0 >= 0.05f && u1_ledge_offset0 <= 1.0f))
+                u1_ledge_offset = NULL;
+        }
+    }
+    if (u1_collision_margin)
+        printf("U1 physics: character collision margin %.3f adapts to frame rate (prevents wall clipping)\n", u1_collision_margin0);
+    if (u1_ledge_offset)
+        printf("U1 physics: ledge hang offset %.3f adapts to frame rate (prevents falling through ledges)\n", u1_ledge_offset0);
+
+    if (!u1_sticky_omega && !u1_settle_stop && !u1_damp_w && !u1_collision_margin && !u1_ledge_offset) return;
     unsigned char *stub = allocate_near_image(page_size);
     if (!stub) {
         puts("U1 physics: unavailable (no stub page in range)");
