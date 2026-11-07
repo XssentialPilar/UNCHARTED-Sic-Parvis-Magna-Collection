@@ -259,7 +259,7 @@ public partial class MainWindow : Window
         SetComboByTag(ComboSsao, "full");
         SetComboByTag(ComboAniso, "16");
         SetComboByTag(ComboResolution, "2560x1440");
-        SetComboByTag(ComboFpsLimit, "120");
+        SetComboByTag(ComboFpsLimit, "60");
         ChkFullResTex.IsChecked = true;
         ChkHiresShadows.IsChecked = true;
         SaveUIToConfig();

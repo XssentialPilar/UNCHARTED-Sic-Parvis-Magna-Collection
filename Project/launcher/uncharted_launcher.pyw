@@ -3693,7 +3693,9 @@ class Launcher:
         env["GOW3_GRAPHICS_API"] = api
         env["GOW3_VRAM_BUDGET_MB"] = vram_cap
         env["GOW3_FRAME_PACER"] = pacer
-        env["GOW3_FPS_LIMIT"] = str(game_ini.get("fps_limit", "60"))
+        fps_lim = str(game_ini.get("fps_limit", "60"))
+        env["GOW3_FPS_LIMIT"] = fps_lim
+        env["GOW3_VBLANK_HZ"] = "60" if fps_lim == "60" else "0"
         env["GOW3_VSYNC"] = str(game_ini.get("vsync", "1"))
         env["GOW3_FADE_DISTANCE"] = str(game_ini.get("fade_distance", "100"))
         env["GOW3_SUN_SHADOW_DISTANCE"] = str(game_ini.get("sun_shadow_distance", "100"))

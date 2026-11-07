@@ -54,6 +54,7 @@ public class GameRunner
         psi.Environment["GOW3_VRAM_BUDGET_MB"] = config.VramBudgetMb;
         psi.Environment["GOW3_FRAME_PACER"] = config.FramePacingMode;
         psi.Environment["GOW3_FPS_LIMIT"] = config.FpsLimit;
+        psi.Environment["GOW3_VBLANK_HZ"] = (config.FpsLimit == "60") ? "60" : "0";
         psi.Environment["GOW3_VSYNC"] = config.VSync;
         psi.Environment["GOW3_TEXTURE_QUALITY"] = config.TextureQuality;
         psi.Environment["GOW3_SHADOW_QUALITY"] = config.ShadowQuality;

@@ -1530,43 +1530,13 @@ void TextureCache::RefreshImage(Image& image) {
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
 
     Gow3Stats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
-
-    // Dynamic PCI-e upload pacing based on previous frame time:
-    // If last frame < 14.0 ms, allow up to 2.5 MB. If > 15.5 ms, throttle to 0.5 MB.
-    static size_t frame_upload_accum = 0;
-    static u64 last_pacer_frame = 0;
-    const u64 curr_frame = Gow3Stats::gpu_frames.load(std::memory_order_relaxed);
-    if (curr_frame != last_pacer_frame) {
-        last_pacer_frame = curr_frame;
-        frame_upload_accum = 0;
-    }
-    const double last_ft_ms = Gow3Stats::last_frametime_ms.load(std::memory_order_relaxed);
-    const size_t max_frame_upload_quota = (last_ft_ms > 15.5) ? (512 * 1024) : (2560 * 1024);
-
-    // Dynamic Mip Clamping & Mip-Tail Pinning under VRAM pressure:
-    // Preventative Zone (75-85%): freeze promotions to Mip 0 for secondary textures (num_mips > 1)
-    // Critical Zone (>= 85%): keep pinned Mip-Tail (Mip 2..N)
-    u32 start_mip_level = 0;
-    if (num_mips > 2 && (total_used_memory >= critical_gc_memory)) {
-        start_mip_level = 2; // Critical: Mip-Tail pinning (Mip 2..N)
-    } else if (num_mips > 1 && (total_used_memory >= pressure_gc_memory)) {
-        start_mip_level = 1; // Preventative: freeze Mip 0, start at Mip 1
-    }
-
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {
-        if (m < start_mip_level) {
-            continue; // Clamped base mip under VRAM pressure
-        }
-        const auto [mip_size, mip_pitch, mip_height, mip_offset] = image.info.mips_layout[m];
-        if (frame_upload_accum + mip_size > max_frame_upload_quota && m > start_mip_level) {
-            break; // Respect strict dynamic PCIe upload quota
-        }
-        frame_upload_accum += mip_size;
         const u32 width = std::max(image.info.size.width >> m, 1u);
         const u32 height = std::max(image.info.size.height >> m, 1u);
         const u32 depth =
             image.info.props.is_volume ? std::max(image.info.size.depth >> m, 1u) : 1u;
+        const auto [mip_size, mip_pitch, mip_height, mip_offset] = image.info.mips_layout[m];
         // Protect GPU modified resources from accidental CPU reuploads.
         if (is_gpu_modified && !is_gpu_dirty) {
             const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
@@ -1898,18 +1868,19 @@ void TextureCache::GarbageCollectImages() {
                                        : budget_now;
             if (budget != 0) {
                 // Strict 1 GB target ceiling: 859,832,320 bytes (~820 MB effective physical cap)
+                // Applied specifically when budget <= 1024 MB
                 constexpr u64 kStrict1GbCapBytes = 859832320ULL;
-                if (budget <= (u64{1024} << 20) || low_vram_flag) {
+                if (budget <= (u64{1024} << 20)) {
                     budget = kStrict1GbCapBytes;
                 }
                 if (budget <= (u64{2560} << 20)) {
-                    // Dynamic Controller Zones:
-                    // Green Zone (< 75%): normal streaming of Mip 0 and Mip 1 for near objects (< 3m)
-                    // Preventative Zone (75% - 85%): freeze promotions to Mip 0, clamp base mip to 1 for secondary textures
-                    // Critical Zone (>= 85%): immediate LRU eviction of non-visible textures, Mip-Tail pinning (Mip 2..N)
+                    // Controller Zones for <= 2.5 GB:
+                    // Normal zone: < 75%
+                    // Pressure zone: 75% - 85%
+                    // Critical zone: >= 85%
                     trigger_gc_memory = (budget * 75ULL) / 100ULL;
-                    pressure_gc_memory = (budget * 75ULL) / 100ULL;
-                    critical_gc_memory = (budget * 85ULL) / 100ULL;
+                    pressure_gc_memory = (budget * 80ULL) / 100ULL;
+                    critical_gc_memory = (budget * 90ULL) / 100ULL;
                 } else {
                     trigger_gc_memory = budget / 10 * 7;
                     pressure_gc_memory = budget / 100 * 85;
@@ -2210,25 +2181,10 @@ void TextureCache::DeleteImage(ImageId image_id) {
     for (const auto& backing : image.backing_images) {
         bytes += backing.image.size_bytes;
     }
-    // Trim expired warm slabs older than 300 ticks
-    const u64 cur_tick = scheduler.CurrentTick();
-    std::erase_if(warm_slab_pool, [cur_tick](const WarmSlab& slab) {
-        return cur_tick > slab.release_tick + kWarmSlabLifetimeTicks;
-    });
-
     pending_free_bytes.fetch_add(bytes, std::memory_order_relaxed);
-    scheduler.DeferOperation([this, image_id, bytes, cur_tick] {
+    scheduler.DeferOperation([this, image_id, bytes] {
         Image& image = slot_images[image_id];
         for (auto& backing : image.backing_images) {
-            if (backing.image.image && warm_slab_pool.size() < 64) {
-                warm_slab_pool.push_back(WarmSlab{
-                    .backing = std::move(backing.image),
-                    .width = image.info.size.width,
-                    .height = image.info.size.height,
-                    .format = image.info.pixel_format,
-                    .release_tick = cur_tick,
-                });
-            }
             for (const ImageViewId image_view_id : backing.image_view_ids) {
                 slot_image_views.erase(image_view_id);
             }

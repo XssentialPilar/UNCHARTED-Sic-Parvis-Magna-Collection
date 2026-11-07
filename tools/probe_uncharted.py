@@ -1703,10 +1703,16 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     # UNCHARTED_CONFIG_FILE: another settings file (tests that must not touch the player's).
     env["GOW3_CONFIG"] = os.environ.get("UNCHARTED_CONFIG_FILE") or str(settings)
     # Frame rates above 60 need the fast vblank (GOW3_VBLANK_HZ=0); an explicit one is kept.
+    limit = ini_value(Path(env["GOW3_CONFIG"]), "fps_limit", "60")
+    if not limit or limit == "0":
+        limit = "60"
+    if "GOW3_FPS_LIMIT" not in env:
+        env["GOW3_FPS_LIMIT"] = str(limit)
     if "GOW3_VBLANK_HZ" not in os.environ:
-        limit = ini_value(Path(env["GOW3_CONFIG"]), "fps_limit", "60")
         if limit.isdigit() and (int(limit) == 0 or int(limit) > 60):
             env["GOW3_VBLANK_HZ"] = "0"
+        else:
+            env["GOW3_VBLANK_HZ"] = str(limit)
     # Save profiles (launcher Advanced, GitHub #66, 24 Oct 2026): profile N plays as PS4 user N,
     # whose saves are in analysis\uncharted-user\savedata\N (profile 1: the folder of every earlier
     # version). GOW3_USER_ID set outside the launcher (tests) wins.
