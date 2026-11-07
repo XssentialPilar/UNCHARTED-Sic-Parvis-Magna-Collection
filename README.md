@@ -1,91 +1,206 @@
 # UNCHARTED: Sic Parvis Magna Collection
 
+> **Sic Parvis Magna** — *Greatness from small beginnings.*
 
+![Development](https://img.shields.io/badge/Status-Active_Development-C88F4D?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows-1F6FEB?style=flat-square)
+![Language](https://img.shields.io/badge/Language-C%2B%2B20%20%2F%20C%2B%2B23-00599C?style=flat-square)
+![Focus](https://img.shields.io/badge/Focus-Performance_%26_Compatibility-3A7D75?style=flat-square)
 
-> **"Sic Parvis Magna"** — *Greatness from small beginnings.*
->
-> Runtime layer, display adaptation, low-level reverse engineering, and deterministic performance framework for PC.
+**A community-driven PC runtime and compatibility project built around a simple idea: great games deserve to remain accessible, adaptable, and enjoyable on more than just the latest hardware.**
 
----
+UNCHARTED: Sic Parvis Magna Collection explores how careful engineering can improve the way classic UNCHARTED experiences are presented and managed on PC. Its focus is on display adaptation, input consistency, memory efficiency, and predictable performance—without losing sight of visual quality.
 
-## 1. Development Directives and C++20/C++23 Engineering Standards
-
-- **Zero Tolerance for Hallucinated APIs:** All invocations exclusively reference verified headers in [`Project/include/unc/`](Project/include/unc/), [`Project/vendor/`](Project/vendor/), and the Windows SDK (`d3d11_1.h`, `dxgi1_4.h`, `windows.h`).
-- **Ban on Dynamic Allocations in the Hot Path:** All per-frame transient memory is served from [`unc::core::LinearArenaAllocator`](Project/include/unc/core/arena_allocator.hpp), which resets in $O(1)$ upon completion of each `Present()` with zero OS-level calls.
-- **Data-Oriented Design and Cache Alignment (`alignas(64)`):** Critical inter-thread structures ([`LinearArenaAllocator`](Project/include/unc/core/arena_allocator.hpp), [`FramePacer`](Project/include/unc/core/frame_pacer.hpp), [`SpscQueue`](Project/include/unc/core/spsc_queue.hpp), [`VramBudgetManager`](Project/include/unc/graphics/vram_budget_mgr.hpp), [`DynamicRingBuffer`](Project/include/unc/graphics/dynamic_ring_buffer.hpp), [`TransientRenderTargetPool`](Project/include/unc/graphics/transient_rt_pool.hpp), [`InputMapper`](Project/include/unc/input/input_mapper.hpp)) are aligned to $64\text{-byte}$ cache lines to eliminate false sharing.
-- **Deterministic Validation:** Every `HRESULT` return value is validated via `UNC_THROW_IF_FAILED(hr)` / `THROW_IF_FAILED(hr)` ([`Project/include/unc/core.hpp`](Project/include/unc/core.hpp)).
+This is an **independent, unofficial engineering project**, not an official PC release or a distribution of the original games.
 
 ---
 
-## 2. Hardware Budget and Telemetry Targets (2015 Baseline Specification)
+## The Vision
 
-| Component | Minimum Requirements (720p / 30–60 FPS, Low-Medium Quality) | Recommended Requirements (1080p / Locked 60 FPS, PS4 Settings) |
+Modern PC gaming should offer more freedom than a fixed resolution, a fixed graphics preset, or a single class of hardware.
+
+The project is being developed around three principles:
+
+1. **Accessibility across hardware generations.** Explore practical ways to make demanding game workloads more manageable on older and memory-constrained PCs.
+2. **Faithful presentation.** Adapt image framing, viewport geometry, HUD elements, and input coordinates while respecting the original experience.
+3. **Consistency over headline numbers.** Prioritize smooth frame delivery, stable memory behavior, and responsive controls—not just the highest momentary FPS reading.
+
+The long-term ambition is to combine console-inspired visual presentation with the flexibility expected from a native PC experience.
+
+## What the Project Focuses On
+
+| Area | Intended player benefit |
+| :--- | :--- |
+| **Display adaptation** | More consistent presentation across supported resolutions and aspect ratios, with correctly scaled UI and input coordinates. |
+| **Hardware-aware graphics settings** | Quality options designed around the resources actually available on the system. |
+| **VRAM budget management** | Fewer avoidable memory spikes through telemetry, texture residency policies, and resource reuse. |
+| **Frame pacing** | Better frame-time consistency and less visible stutter during camera movement and gameplay transitions. |
+| **Texture efficiency** | Mip selection and appropriate block-compressed formats to reduce memory pressure where supported. |
+| **Keyboard and mouse adaptation** | Clearer PC-oriented controls and correctly transformed input across viewport changes. |
+| **Diagnostics** | Performance and memory measurements that make problems easier to reproduce and investigate. |
+
+These are the project's **design priorities**. Individual features may be experimental, incomplete, or dependent on the selected graphics backend.
+
+## Why It Matters
+
+Many performance problems are not caused by visual complexity alone. Poor resource residency decisions, irregular frame pacing, repeated allocations, and incorrect display scaling can waste hardware capability and undermine an otherwise playable experience.
+
+This project approaches those problems as interconnected systems:
+
+- **Use memory deliberately.** Keep essential resources available, reduce unnecessary high-resolution residency, and avoid preventable allocation churn.
+- **Scale the expensive work.** Make detail, shadow quality, and render distance respond to the selected performance profile rather than assuming unlimited GPU resources.
+- **Keep the image coherent.** Treat resolution, aspect ratio, UI layout, and pointer mapping as one display system.
+- **Measure the experience.** Track frame times, memory use, and compatibility issues so improvements can be assessed with evidence.
+
+The goal is not simply to make a game *launch* on weaker hardware. It is to investigate what it takes to make the experience **usable, stable, and visually convincing** within realistic constraints.
+
+## Built for Different Kinds of Players
+
+**For players:** A focus on configurable graphics, reliable controls, and smoother presentation on a wider range of systems.
+
+**For owners of older PCs:** A hardware-conscious design philosophy centered on 1 GB and 2 GB VRAM reference profiles instead of assuming a modern high-end GPU.
+
+**For developers and technical contributors:** A modular C++ codebase, measurable budgets, explicit invariants, and opportunities to validate compatibility and optimization work.
+
+## Performance Ambitions — 2015 Hardware Baseline
+
+The following profiles are **engineering targets, not certified minimum requirements or guaranteed results**.
+
+| Profile | Legacy 1 GB VRAM target | 2 GB VRAM target |
 | :--- | :--- | :--- |
-| **Operating System** | Windows 7 SP1 / 8.1 (64-bit) | Windows 7 SP1 / 8.1 / 10 (64-bit) |
-| **Processor (CPU)** | Intel Core 2 Quad Q8400 @ 2.66 GHz / AMD Phenom II X4 945 @ 3.0 GHz (or Intel Core i3-2100) | Intel Core i5-2400 @ 3.1 GHz / AMD FX-6300 @ 3.5 GHz |
-| **System RAM** | $4\text{ GB}$ (`GOW3_LOW_RAM=1`) | $6\text{ GB}$ to $8\text{ GB}$ |
-| **Graphics Card (NVIDIA)** | GeForce GTX 460 ($1\text{ GB}$) / GTX 550 Ti / GTX 650 / GTX 750 ($1\text{ GB}$) | GeForce GTX 750 Ti ($2\text{ GB}$) / GeForce GTX 660 ($2\text{ GB}$) |
-| **Graphics Card (AMD)** | Radeon HD 5770 ($1\text{ GB}$) / Radeon HD 6790 / HD 7750 ($1\text{ GB}$) | Radeon HD 7850 ($2\text{ GB}$) / Radeon R7 265 / R9 270 ($2\text{ GB}$) |
-| **DirectX / Graphics** | DirectX 11.1 (Feature Level `11_0`) + DXGI 1.4 / Vulkan 1.3 | DirectX 11.1 (Feature Level `11_0`) + DXGI 1.4 / Vulkan 1.3 |
-| **Physical VRAM & Hard Cap** | $1\text{ GB}$ (Hard cap $\le 820\text{ MB}$ / `859,832,320` B, $0$ PCIe paging) | $2\text{ GB}$ (Hard cap $\le 1720\text{ MB}$ / `1,803,550,720` B, $\ge 328\text{ MB}$ DWM) |
-| **Storage** | $\sim 40\text{ GB}$ (Standard HDD) | $\sim 40\text{ GB}$ (7200 RPM HDD or SSD) |
+| **Rendering goal** | 720p, low–medium quality | 1080p, PS4-inspired quality target |
+| **Performance objective** | Playable 30 FPS baseline; explore 60 FPS where feasible | Stable 60 FPS where the game, driver, and hardware allow |
+| **Engine-managed VRAM budget** | **820 MiB** (`859,832,320` bytes) | **1,720 MiB** (`1,803,550,720` bytes) |
+| **System memory reference** | 4 GB | 6–8 GB |
+| **Reference GPU classes** | GTX 460 / GTX 550 Ti / HD 5770 / HD 7750 | GTX 750 Ti / GTX 660 / HD 7850 / R9 270 |
+| **Reference CPU classes** | Core 2 Quad Q8400 / Phenom II X4 945 | Core i5-2400 / FX-6300 |
 
-### 2.1. Non-Negotiable Frametime Metrics
-- **Locked 60 FPS Frametime Invariant:**
-  $$T_{\text{frame}} = \frac{1000\text{ ms}}{60} = 16.666\text{ ms}$$
-- **Maximum Allowable Variance (Frame-to-Frame Jitter):**
-  $$\Delta T_{99\%} = |T_i - T_{i-1}| < 0.45\text{ ms}$$
-- **Per-Subsystem Budget ($16.66\text{ ms}$):**
-  * Input Logic and UI Transformations: $\le 1.20\text{ ms}$
-  * Culling, Command Sorting, and Submission (CPU Render Thread): $\le 4.50\text{ ms}$
-  * GPU Execution (Shadows + Geometry + Lighting + Post-Processing): $\le 9.50\text{ ms}$
-  * Safety Margin and Presentation Synchronization: $\ge 1.46\text{ ms}$
+**Important:** Reference components identify the historical hardware class the project aims to investigate. Their inclusion does **not** mean that each GPU, CPU, driver, or operating system has passed a compatibility or performance test. The VRAM figures describe *project-managed targets*, not an absolute limit on all allocations made by the operating system, graphics driver, or game. Zero paging and locked frame rates cannot be promised solely by selecting a memory cap.
 
----
+### Graphics API and Operating System Compatibility
 
-## 3. Video Memory (VRAM) Engineering for 1 GB and 2 GB GPUs
+- **Primary graphics direction:** Direct3D 11 and feature-level capability detection, with DXGI interfaces selected according to what the operating system actually provides.
+- **Vulkan:** A separate, capability-dependent path. Vulkan 1.3 must **not** be assumed available on every legacy GPU listed above.
+- **Windows:** Modern Windows configurations are the practical development environment. Windows 7 SP1 and Windows 8.1 remain historical compatibility goals, subject to the actual Direct3D/DXGI feature set and successful testing.
 
-### 3.1. Real-Time DXGI Telemetry ([`VramBudgetManager`](Project/include/unc/graphics/vram_budget_mgr.hpp))
-$$\text{UsageRatio} = \frac{\text{CurrentUsage}}{\text{Budget}}$$
-- **Normal ($\text{UsageRatio} < 0.80$):** *Mip 0* and *Mip 1* streaming enabled.
-- **Elevated ($0.80 \le \text{UsageRatio} < 0.88$):** Promotions to *Mip 0* frozen for secondary textures; *Mip 1* enforced.
-- **Critical ($\text{UsageRatio} \ge 0.88$):** Immediate LRU-order eviction of *Mip 0* levels beyond $5\text{ meters}$ from active camera + `DiscardResource` on transient surfaces.
+No platform or GPU should be considered officially supported until it has been verified with repeatable tests.
 
-### 3.2. Mipmap Streaming and Mip-Tail Pinning
-$$\text{Bytes}(\text{Mip}_{k+1}) = \frac{1}{4} \times \text{Bytes}(\text{Mip}_k)$$
-- Levels $\text{Mip}_2 \dots \text{Mip}_N$ ($\le 512 \times 512$) remain pinned in VRAM ($< 80\text{ MB}$). On $1\text{ GB}$ GPUs, `GetRecommendedMinMipLevel()` clamps `MostDetailedMip = +1`, reducing texture memory footprint by $75\%$.
+## Project Status
 
-### 3.3. Strict Block Compression (BC1 to BC7) and BC5 Reconstruction ([`dx11_backend.hpp`](Project/include/unc/graphics/dx11_backend.hpp))
-$$N_{xy} = \text{Sample}_{xy} \times 2.0 - 1.0, \qquad N_z = \sqrt{\max\left(0.0, 1.0 - (N_x^2 + N_y^2)\right)}$$
+**Active development / experimental.** The framework is evolving, and behavior may differ between titles, graphics APIs, drivers, and hardware configurations.
 
-### 3.4. Transient Render Target Aliasing ([`TransientRenderTargetPool`](Project/include/unc/graphics/transient_rt_pool.hpp))
-- **Phase 1 (Shadows):** Atlas $2048 \times 2048$ ($16\text{ MB}$, Physical Block 0).
-- **Phase 2 (Geometry):** G-Buffer / Scene Color HDR + Depth ($64\text{ MB}$, Physical Block 1).
-- **Phase 3 (Lighting):** Reuses Physical Block 0 ($16\text{ MB}$) at half resolution ($\frac{W}{2} \times \frac{H}{2}$) for SSAO.
-- **Phase 4 (Post-Processing):** Ping-pong between Physical Blocks 0 and 2 at half resolution ($\frac{W}{2} \times \frac{H}{2}$) for Bloom, Motion Blur, and Tonemapping.
+Current priorities include:
+
+- Improving texture and transient-resource memory management.
+- Reducing stutter through controlled streaming, workload scheduling, and frame pacing.
+- Making graphics controls correspond to real runtime behavior.
+- Refining keyboard/mouse prompts and display adaptation.
+- Establishing reproducible tests on low-VRAM and older-generation hardware.
+
+**Benchmarks and compatibility claims will be meaningful only when accompanied by their test conditions.** Until then, specifications on this page describe targets and architecture, not validated shipping guarantees.
 
 ---
 
-## 4. Mathematical Invariants for Display, Input, and Presentation
+## Technical Overview
 
-- **Swapchain and Viewport Decoupling:**
-  $$\text{Aspect Ratio} = \frac{\text{Width}_{\text{viewport}}}{\text{Height}_{\text{viewport}}}$$
-- **Independent-Axis Input Coordinate Normalization ([`InputMapper`](Project/include/unc/input/input_mapper.hpp)):**
-  $$X_{\text{game}} = \left( X_{\text{client}} - \text{Viewport}_{X} \right) \times \left( \frac{\text{Width}_{\text{internal}}}{\text{Viewport}_{\text{width}}} \right), \qquad Y_{\text{game}} = \left( Y_{\text{client}} - \text{Viewport}_{Y} \right) \times \left( \frac{\text{Height}_{\text{internal}}}{\text{Viewport}_{\text{height}}} \right)$$
-- **Strict 7-Step Sequence in `IDXGISwapChain::Present` ([`ExecuteDeterministic7StepPresent`](Project/native/graphics/swapchain_hook.cpp)):**
-  1. Start QPC timer (`FramePacer::BeginFrame`).
-  2. Poll VRAM telemetry (`VramBudgetManager::PollAndEnforceBudget`) and evict LRU Mip 0 if $\text{UsageRatio} \ge 0.88$.
-  3. Dispatch up to $2.5\text{ MB}$ from the asynchronous upload `SpscQueue`.
-  4. Evaluate dirty flags and update projection constants via `DynamicRingBuffer` (`MAP_WRITE_NO_OVERWRITE`).
-  5. Render adapted UI/HUD layers.
-  6. Reset the current frame's `LinearArenaAllocator` in $O(1)$.
-  7. Execute `FramePacer::WaitForTargetFrameTime` and invoke `oPresent(SyncInterval, Flags)`.
+The runtime is designed around **C++20/C++23**, explicit error handling, data-oriented structures, and bounded work on performance-sensitive paths.
 
----
+### Core Architecture
 
-## 5. Build, Packaging, and Execution
+| Component | Responsibility |
+| :--- | :--- |
+| [`LinearArenaAllocator`](Project/include/unc/core/arena_allocator.hpp) | Per-frame transient allocations, with constant-time arena reset. |
+| [`FramePacer`](Project/include/unc/core/frame_pacer.hpp) | Frame timing and pacing policy. |
+| [`SpscQueue`](Project/include/unc/core/spsc_queue.hpp) | Asynchronous producer/consumer handoff for streaming work. |
+| [`VramBudgetManager`](Project/include/unc/graphics/vram_budget_mgr.hpp) | Memory telemetry and pressure-aware residency policy. |
+| [`DynamicRingBuffer`](Project/include/unc/graphics/dynamic_ring_buffer.hpp) | Frequently updated GPU-side data. |
+| [`TransientRenderTargetPool`](Project/include/unc/graphics/transient_rt_pool.hpp) | Reuse of compatible temporary render targets. |
+| [`InputMapper`](Project/include/unc/input/input_mapper.hpp) | Independent X/Y coordinate normalization for adapted viewports. |
+
+The intended engineering conventions include avoiding general-purpose dynamic allocation in the per-frame hot path, using `alignas(64)` where it demonstrably prevents false sharing, and validating relevant Windows/Direct3D results through the project's error-handling helpers. Exact implementation and platform support must be confirmed against the repository's actual headers and tests.
+
+### VRAM Pressure Policy
+
+Where supported by the active backend, the intended texture residency policy responds to the ratio between **measured current usage** and **available budget**:
+
+| Pressure | Usage / Budget | Intended action |
+| :--- | :--- | :--- |
+| Normal | Below 80% | Allow appropriate higher-detail texture residency. |
+| Elevated | 80%–88% | Restrict nonessential high-resolution mip promotions. |
+| Critical | 88% or above | Prioritize safe eviction or downgrade candidates and reclaim reusable transient resources. |
+
+The design also explores BC1–BC7 texture formats, BC5 normal-map reconstruction, pinned low-resolution mip tails, and reuse of transient render-target allocations. A high-detail mip downgrade can reduce a texture's *theoretical* footprint by roughly 75% if the top mip level accounts for that proportion, but actual residency savings depend on resource creation and backend support.
+
+Temporary render targets are intended to share compatible allocations when their lifetimes do not overlap—for example, shadow, lighting, and post-processing phases. Reuse must respect GPU synchronization and resource format requirements.
+
+### Frame-Time and Presentation Targets
+
+A 60 FPS output cadence corresponds to a **16.667 ms** frame interval. The framework uses this as a reference when profiling input/UI work, CPU submission, GPU execution, and presentation overhead.
+
+The project's more aggressive frame-to-frame jitter objective is **below 0.45 ms** under controlled conditions. This is a measurement target—not a universal invariant that can be guaranteed across operating systems, scenes, or hardware. CPU and GPU phases may overlap, so subsystem budgets must be evaluated using captured traces rather than simply added together.
+
+Display adaptation treats viewport dimensions and input coordinates separately:
+
+```text
+gameX = (clientX - viewportX) * internalWidth  / viewportWidth
+gameY = (clientY - viewportY) * internalHeight / viewportHeight
+```
+
+The intended [`Present`](Project/native/graphics/swapchain_hook.cpp) path has seven coordinated stages:
+
+1. Start the high-resolution frame timer.
+2. Sample VRAM pressure and apply safe budget policies.
+3. Process a bounded amount of queued upload work (design target: up to 2.5 MiB).
+4. Apply dirty-state projection updates through the dynamic ring buffer.
+5. Render the adapted HUD and interface layers.
+6. Reset the frame's linear arena after its transient CPU data is no longer needed.
+7. Apply frame pacing and forward the call to the original swapchain `Present` function.
+
+### Build from Source
+
+From the repository root, run the project's PowerShell build and packaging scripts:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Project\tools\Build.ps1 -Config Release
 powershell -ExecutionPolicy Bypass -File .\Project\tools\Package.ps1
 ```
+
+Source locations referenced by the architecture include `Project/include/unc/`, `Project/vendor/`, and `Project/native/graphics/`. **Build prerequisites, script availability, and the output package should be confirmed against the checked-out revision.**
+
+---
+
+## Testing and Feedback
+
+Useful reports include:
+
+1. The exact game/build and project revision tested.
+2. Windows version, CPU, GPU, driver, and system RAM.
+3. Graphics API, resolution, aspect ratio, and active quality settings.
+4. Average FPS, frame-time captures or 1% lows, plus VRAM/RAM observations.
+5. Steps to reproduce, relevant logs, and before/after comparisons when possible.
+
+Constructive reports help distinguish true engine-side improvements from driver behavior, scene differences, or misleading one-frame readings.
+
+## Frequently Asked Questions
+
+**Is this an official UNCHARTED PC release?**  
+No. It is an independent community engineering initiative.
+
+**Does this repository include the original games or copyrighted assets?**  
+No game content is provided or authorized by this README. Users remain responsible for obtaining and using any required software lawfully.
+
+**Will every 1 GB GPU achieve 30–60 FPS?**  
+No. That is a research and optimization objective, not a proven compatibility claim.
+
+**Does setting an 820 MiB budget guarantee zero memory paging?**  
+No. Actual GPU residency is affected by the driver, operating system, shared memory, other processes, and the game's resource behavior.
+
+## Legal and Attribution
+
+UNCHARTED and related names, characters, and game assets are the property of their respective rights holders. This project is **not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment, PlayStation, Naughty Dog, or Bluepoint Games**.
+
+This repository documents independent compatibility and performance engineering. It does not grant rights to redistribute proprietary game files.
+
+---
+
+**Sic Parvis Magna.** Small beginnings. Ambitious engineering. Measurable progress.
