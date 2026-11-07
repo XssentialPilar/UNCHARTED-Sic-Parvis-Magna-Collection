@@ -57,6 +57,23 @@ Para garantizar transparencia técnica y cumplir las reglas del proyecto:
 
 ---
 
+### 1.5 Diagnóstico y Solución Definitiva de Pantalla Negra en DirectX 9
+Al iniciar con la opción de backend `DirectX 9`, la ventana de juego se abría y el motor procesaba a 120 FPS pero la pantalla permanecía en negro absoluto.
+
+- **Causa Raíz Diagnosticada Mediante Prueba Aislada de Hardware:**
+  1. La textura Direct3D 9 (`D3DFMT_A8R8G8B8`) se mapea en el subsistema DXGI de Windows de manera estricta al formato `DXGI_FORMAT_B8G8R8A8_UNORM` (formato 87).
+  2. En el puente de interoperabilidad (`gow3_dxgi_presenter.cpp`), la textura compartida D3D11 y la imagen Vulkan se creaban originalmente en formato `DXGI_FORMAT_R8G8B8A8_UNORM` (formato 28).
+  3. `ID3D11DeviceContext::CopyResource(dst_interop, src)` requiere estricta compatibilidad de familia de formato. Entre familias incompatibles (`R8G8B8A8` y `B8G8R8A8`), `CopyResource` falla silenciosamente y descarta la copia, dejando la superficie de D3D9 en negro (0x00000000). Al invocar `StretchRect` y `PresentEx`, se proyectaba una imagen completamente negra.
+  4. Adicionalmente, `CreateDeviceEx` utilizaba `D3DADAPTER_DEFAULT` (índice 0), el cual en equipos con gráficos híbridos (iGPU + dGPU) podía seleccionar una GPU distinta a la dGPU elegida por Vulkan.
+
+- **Solución Implementada y Verificada:**
+  1. Se unificó el formato a `B8G8R8A8_UNORM` de extremo a extremo para DirectX 9: `surface_format = vk::Format::eB8G8R8A8Unorm` en Vulkan, `tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM` en D3D11 y `D3DFMT_A8R8G8B8` en D3D9.
+  2. Se implementó el emparejamiento exacto de adaptador en D3D9 mediante `IDirect3D9Ex::GetAdapterLUID` cotejado contra el LUID de la GPU física de Vulkan.
+  3. Se corrigió el flujo de presentación para pruebas unitarias headless y ventanas reales en `Present()`.
+  4. La suite de pruebas de regresión de hardware `dxgi-presenter-test.exe` comprobó la inicialización, importación y presentación continua en D3D9, D3D11 y D3D12 con éxito rotundo (**PASS, Exit Code 0**).
+
+---
+
 ### 1.4 Integración en Launchers y Suite de Pruebas
 1. **Launcher C# / WPF (.NET 10):**
    - Agregada la opción gráfica `DirectX 9 (D3D9Ex FlipEx Nativo)` con tag `dx9` en `MainWindow.xaml` y soporte en `LauncherConfig.cs`.
