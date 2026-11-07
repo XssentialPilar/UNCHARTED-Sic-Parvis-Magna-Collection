@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace UnchartedLauncher;
 
@@ -27,7 +28,10 @@ public class LauncherConfig
     public bool DepthOfField { get; set; } = false;
     public bool Diagnostics { get; set; } = false;
     public double MouseSensitivity { get; set; } = 3.0;
+    [JsonPropertyName("gpu")]
     public string GpuName { get; set; } = "";
+
+    [JsonPropertyName("gpu_id")]
     public string GpuId { get; set; } = "-1";
 
     private static string ConfigPath => Path.Combine(
@@ -42,7 +46,8 @@ public class LauncherConfig
             if (File.Exists(ConfigPath))
             {
                 string json = File.ReadAllText(ConfigPath);
-                var cfg = JsonSerializer.Deserialize<LauncherConfig>(json);
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var cfg = JsonSerializer.Deserialize<LauncherConfig>(json, options);
                 if (cfg != null) return cfg;
             }
         }

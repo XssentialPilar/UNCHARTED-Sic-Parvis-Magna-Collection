@@ -63,6 +63,8 @@ public partial class MainWindow : Window
         SetComboByTag(ComboFpsLimit, _config.FpsLimit);
         SetComboByTag(ComboFramePacer, _config.FramePacingMode);
 
+        PopulateGpuCombo();
+
         ChkFullResTex.IsChecked = _config.FullResTextures;
         ChkHiresShadows.IsChecked = _config.HiresShadows;
         ChkVsync.IsChecked = _config.VSync == "1";
@@ -87,6 +89,16 @@ public partial class MainWindow : Window
         _config.FpsLimit = GetComboTag(ComboFpsLimit, "60");
         _config.FramePacingMode = GetComboTag(ComboFramePacer, "hybrid");
 
+        if (ComboGpu.SelectedItem is ComboBoxItem gpuItem && gpuItem.Tag is string gpuTag)
+        {
+            var parts = gpuTag.Split('|');
+            if (parts.Length >= 2)
+            {
+                _config.GpuId = parts[0];
+                _config.GpuName = parts[1];
+            }
+        }
+
         _config.FullResTextures = ChkFullResTex.IsChecked == true;
         _config.HiresShadows = ChkHiresShadows.IsChecked == true;
         _config.VSync = ChkVsync.IsChecked == true ? "1" : "0";
@@ -110,7 +122,13 @@ public partial class MainWindow : Window
         };
         TxtReadyStatus.Text = $"Listo: {gameName}";
         string capText = _config.VramBudgetMb == "0" ? "Sin Cap" : $"{_config.VramBudgetMb} MB Cap";
-        TxtFooterDetails.Text = $"{_config.GraphicsApi.ToUpper()} • {capText} • {_config.Resolution} • {_config.FpsLimit} FPS • {_config.FramePacingMode} Pacer";
+        string gpuShort = !string.IsNullOrEmpty(_config.GpuName) ? (_config.GpuName.Contains("760M") ? "AMD 760M (CPU)" : "RTX 5050") : "Auto GPU";
+        TxtFooterDetails.Text = $"{gpuShort} • {_config.GraphicsApi.ToUpper()} • {capText} • {_config.Resolution} • {_config.FpsLimit} FPS • {_config.FramePacingMode} Pacer";
+        if (TxtExpeditionGpuBanner != null)
+        {
+            string gpuDisplay = !string.IsNullOrEmpty(_config.GpuName) ? _config.GpuName : "Auto Detección";
+            TxtExpeditionGpuBanner.Text = $"GPU Activa: {gpuDisplay}";
+        }
         BtnPlay.Content = $"► JUGAR {(_config.SelectedGame switch { "u1" => "PARTE I", "u2" => "PARTE II", "u3" => "PARTE III", _ => "" })}";
     }
 
@@ -397,5 +415,157 @@ public partial class MainWindow : Window
                 Dispatcher.InvokeAsync(() => TxtConsole.AppendText($"[Error de verificación]: {ex.Message}\n"));
             }
         });
+    }
+
+    private record GpuInfo(int Id, string Name, string Type);
+
+    private List<GpuInfo> EnumerateGpus()
+    {
+        var list = new List<GpuInfo>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        string[] candidates = {
+            Path.Combine(_workspaceRoot, "Build", "Windows", "gow3-gpu-capabilities.exe"),
+            Path.Combine(_workspaceRoot, "Distribution", "Uncharted", "gow3-gpu-capabilities.exe"),
+            Path.Combine(_workspaceRoot, "gow3-gpu-capabilities.exe"),
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gow3-gpu-capabilities.exe"),
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "gow3-gpu-capabilities.exe"),
+        };
+        foreach (var exe in candidates)
+        {
+            if (File.Exists(exe))
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo(exe, "--list")
+                    {
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var proc = Process.Start(psi);
+                    if (proc != null)
+                    {
+                        string output = proc.StandardOutput.ReadToEnd();
+                        proc.WaitForExit(3000);
+                        foreach (var rawLine in output.Split('\n', '\r'))
+                        {
+                            var line = rawLine.Trim();
+                            if (string.IsNullOrEmpty(line)) continue;
+                            var parts = line.Split('\t');
+                            if (parts.Length >= 2)
+                            {
+                                int id = int.TryParse(parts[0].Trim(), out int parsed) ? parsed : list.Count;
+                                string name = parts[1].Trim();
+                                string type = parts.Length > 2 ? parts[2].Trim() : (name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) || name.Contains("Intel", StringComparison.OrdinalIgnoreCase) ? "integrated" : "discrete");
+                                if (!string.IsNullOrEmpty(name) && seen.Add(name))
+                                {
+                                    list.Add(new GpuInfo(id, name, type));
+                                }
+                            }
+                        }
+                        if (list.Count > 0) return list;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo("powershell", "-NoProfile -Command \"(Get-CimInstance Win32_VideoController).Name\"")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            if (proc != null)
+            {
+                string output = proc.StandardOutput.ReadToEnd();
+                proc.WaitForExit(4000);
+                foreach (var rawLine in output.Split('\n', '\r'))
+                {
+                    string name = rawLine.Trim();
+                    if (!string.IsNullOrEmpty(name) && seen.Add(name))
+                    {
+                        string type = (name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) || name.Contains("Intel", StringComparison.OrdinalIgnoreCase)) ? "integrated" : "discrete";
+                        list.Add(new GpuInfo(list.Count, name, type));
+                    }
+                }
+            }
+        }
+        catch { }
+
+        if (list.Count == 0)
+        {
+            list.Add(new GpuInfo(0, "NVIDIA GeForce RTX 5050 Laptop GPU", "discrete"));
+            list.Add(new GpuInfo(1, "AMD Radeon 760M Graphics", "integrated"));
+        }
+        return list;
+    }
+
+    private void PopulateGpuCombo()
+    {
+        var gpus = EnumerateGpus();
+        ComboGpu.Items.Clear();
+        int selectedIndex = 0;
+        for (int i = 0; i < gpus.Count; i++)
+        {
+            var gpu = gpus[i];
+            string typeLabel = gpu.Type.Equals("integrated", StringComparison.OrdinalIgnoreCase) ? "Integrada CPU" : "Dedicada";
+            var item = new ComboBoxItem
+            {
+                Content = $"{gpu.Name} ({typeLabel})",
+                Tag = $"{gpu.Id}|{gpu.Name}|{gpu.Type}"
+            };
+            ComboGpu.Items.Add(item);
+
+            if (!string.IsNullOrEmpty(_config.GpuName))
+            {
+                if (gpu.Name.Equals(_config.GpuName, StringComparison.OrdinalIgnoreCase) ||
+                    (int.TryParse(_config.GpuId, out int cfgId) && cfgId == gpu.Id))
+                {
+                    selectedIndex = i;
+                }
+            }
+            else if (gpu.Type.Equals("discrete", StringComparison.OrdinalIgnoreCase))
+            {
+                selectedIndex = i;
+            }
+        }
+
+        if (ComboGpu.Items.Count > 0)
+        {
+            ComboGpu.SelectedIndex = selectedIndex;
+        }
+    }
+
+    private void OnGpuChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        if (ComboGpu.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+        {
+            var parts = tag.Split('|');
+            if (parts.Length >= 2)
+            {
+                _config.GpuId = parts[0];
+                _config.GpuName = parts[1];
+                string type = parts.Length > 2 ? parts[2] : "discrete";
+
+                if (type.Equals("integrated", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_config.VramBudgetMb == "0" || (int.TryParse(_config.VramBudgetMb, out int mb) && mb > 1024))
+                    {
+                        SetComboByTag(ComboVramCap, "820");
+                        _config.VramBudgetMb = "820";
+                    }
+                }
+
+                _config.Save();
+                _config.SyncToIniFiles(_workspaceRoot);
+                UpdateFooterSummary();
+            }
+        }
     }
 }

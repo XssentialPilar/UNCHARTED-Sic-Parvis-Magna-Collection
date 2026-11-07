@@ -163,7 +163,10 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="SELECCIONA TU EXPEDICIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,5,0,15"/>
+                            <Grid Grid.Row="0" Margin="0,5,0,15">
+                                <TextBlock Text="SELECCIONA TU EXPEDICIÓN" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtExpeditionGpuBanner" HorizontalAlignment="Right" VerticalAlignment="Center" Text="GPU Activa: Detectando..." FontSize="12" Foreground="#C2B294" Margin="0,0,15,0"/>
+                            </Grid>
 
                             <!-- 3 Journals Horizontal Layout -->
                             <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -221,6 +224,18 @@
                         <ScrollViewer x:Name="TabGraphics" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                             <StackPanel Margin="0,5,15,5">
                                 <TextBlock Text="CONFIGURACIÓN DE GRÁFICOS Y GESTIÓN DE VRAM" FontFamily="Cinzel, Georgia, serif" FontSize="16" FontWeight="SemiBold" Foreground="#E5C158" Margin="0,0,0,15"/>
+
+                                <Grid Margin="0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Tarjeta Gráfica Activa (GPU):" FontWeight="Bold" Foreground="#FFF"/>
+                                        <TextBlock Text="Selecciona GPU dedicada (RTX) o integrada (CPU)" FontSize="11" Foreground="#888"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ComboGpu" Grid.Column="1" SelectionChanged="OnGpuChanged"/>
+                                </Grid>
 
                                 <Grid Margin="0,8">
                                     <Grid.ColumnDefinitions>
