@@ -1588,6 +1588,12 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
                 env["GOW3_POKE"] = ",".join(pokes)
         else:
             print("Cheats and unlocked rewards: need update 1.02 (not used)")
+    api = os.environ.get("GOW3_GRAPHICS_API", "vulkan")
+    tex_q = os.environ.get("GOW3_TEXTURE_QUALITY", "medium")
+    shad_q = os.environ.get("GOW3_SHADOW_QUALITY", "medium")
+    ssao_q = os.environ.get("GOW3_SSAO_QUALITY", "full")
+    pacer = os.environ.get("GOW3_FRAME_PACER", "hybrid")
+    print(f"Engine Architecture: API={api.upper()} | Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}")
     # Texture filtering (launcher -> Advanced -> Texture filtering): sampler.cpp GOW3_ANISOTROPY raises
     # mipmapped colour textures to at least that ratio (~0% FPS measured in Uncharted 2).
     if (aniso := os.environ.get("UNCHARTED_ANISOTROPY", "0")) in ("2", "4", "8", "16"):

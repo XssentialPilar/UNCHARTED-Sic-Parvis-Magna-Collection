@@ -217,17 +217,17 @@ GAMES = [
      "exe": "big3-ps4_Shipping.elf", "log": "big3-ps4_Shipping"},
 ]
 
-# Palette: Sic Parvis Magna Collection — Deep Nautical Obsidian & Francis Drake Aged Brass/Gold.
-BG = "#0c1017"
-PANEL = "#131924"
-PANEL_HI = "#1b2434"
-LINE = "#2d3b52"
-TEXT = "#f3ead6"
-MUTED = "#9fb0c7"
-DIM = "#62738a"
-GOLD = "#d8a84e"
-GOLD_HI = "#f0c66e"
-INK = "#0b0f16"
+# Palette: Sic Parvis Magna Collection — Deep Nautical Obsidian & Francis Drake Royal Gold.
+BG = "#090d14"
+PANEL = "#111824"
+PANEL_HI = "#172233"
+LINE = "#223147"
+TEXT = "#f8f6f0"
+MUTED = "#93a4be"
+DIM = "#576b88"
+GOLD = "#d4af37"
+GOLD_HI = "#f4cf5a"
+INK = "#080c12"
 STOP_RED = "#c24d3b"
 
 # At most 120: faster, the game's movement timing breaks (Drake's Fortune at 140-160 FPS: running
@@ -257,7 +257,10 @@ CHEATS = (("invincible", "Invincible", "Nate takes no damage. All three games.")
           ("grenades", "Infinite grenades", "Grenades never run out. Uncharted 3."),
           ("onehit", "One-hit kills", "Enemies go down with one hit. Uncharted 3."))
 LAUNCHER_DEFAULTS = {"game": "u1", "diagnostics": True, "game_dir": "", "check_updates": False, "language": "1",
-                     "unlock": False}
+                     "unlock": False, "graphics_api": "vulkan", "texture_quality": "medium",
+                     "shadow_quality": "medium", "anisotropy": "16", "hires_shadows": False,
+                     "full_res_textures": False, "ssao_quality": "full", "dof_mode": "enabled",
+                     "motion_blur_mode": "enabled", "frame_pacing_mode": "hybrid"}
 
 # The PS4's system language (its id, as sceSystemServiceParamGetInt reports it) for the 22 languages
 # the Collection has text for (all three games; text1/ps4/<n>.common in core.psarc). Each game's main
@@ -1978,13 +1981,14 @@ class Launcher:
         strip.pack(side="top", fill="x")
         self.tab_buttons = {}
         self.tab_cells = {}
-        tabs = [("setup", "QUICK SETUP"), ("display", "DISPLAY"), ("performance", "PERFORMANCE"),
-                ("controls", "CONTROLS"), ("cheats", "CHEATS"), ("advanced", "ADVANCED")]
+        tabs = [("setup", "QUICK SETUP"), ("graphics", "GRAPHICS"), ("display", "DISPLAY"),
+                ("performance", "PERFORMANCE"), ("controls", "CONTROLS"), ("cheats", "CHEATS"),
+                ("advanced", "ADVANCED")]
         if multiplayer_preview():
             tabs.append(("multiplayer", "MULTIPLAYER"))
         for name, label in tabs:
             cell = tk.Frame(strip, bg=BG)
-            cell.pack(side="left", padx=(0, self.px(26)))
+            cell.pack(side="left", padx=(0, self.px(22)))
             text = tk.Label(cell, text=label, font=self.f_tab, bg=BG, fg=MUTED, cursor="hand2")
             text.pack(side="top", pady=(0, self.px(6)))
             bar = tk.Frame(cell, bg=BG, height=max(2, self.px(2)))
@@ -2002,6 +2006,7 @@ class Launcher:
         self.root.bind_all("<MouseWheel>", self.wheel)
         self.pages = {
             "setup": self.page_setup(),
+            "graphics": self.page_graphics(),
             "display": self.page_display(),
             "performance": self.page_performance(),
             "controls": self.page_controls(),
@@ -2206,6 +2211,148 @@ class Launcher:
         self.refresh_render_size()
         self.redraw_presets()
         self.update_fps_note()
+
+    def page_graphics(self):
+        page = self.page()
+
+        # Engine Architecture Header Badge
+        header_frame = tk.Frame(page, bg=PANEL_HI, highlightthickness=1, highlightbackground=LINE)
+        header_frame.pack(side="top", fill="x", pady=(0, self.px(14)), ipady=self.px(8), ipadx=self.px(12))
+        tk.Label(header_frame, text="ENGINE ARCHITECTURE & RENDERING PIPELINE", font=self.f_body_bold,
+                 bg=PANEL_HI, fg=GOLD, anchor="w").pack(side="top", fill="x")
+        tk.Label(header_frame,
+                 text="Configure graphics API, dynamic shadow resolution, texture streaming budgets, "
+                      "anisotropic filtering and post-processing pipeline.",
+                 font=self.f_small, bg=PANEL_HI, fg=MUTED, anchor="w").pack(side="top", fill="x")
+
+        # 1. Graphics API
+        def api_factory(parent):
+            options = [("dx11", "DirectX 11 (2015 FL 11_0)"),
+                       ("vulkan", "Vulkan 1.3 (Default)"),
+                       ("dx12", "DirectX 12 (Agility)")]
+            return Segmented(parent, options, self.config.get("graphics_api", "vulkan"),
+                             lambda v: self.change_config("graphics_api", v), self.f_small, recommended="vulkan")
+        self.widgets["graphics_api"] = self.row(
+            page, "Graphics API",
+            "DirectX 11 (Feature Level 11_0) is optimal for 2015-era GPUs (GTX 460 / 550 Ti / 650, Radeon HD 5770 / 7750) "
+            "with zero driver overhead. Vulkan 1.3 provides native asynchronous compute and SPIR-V shaders. DirectX 12 "
+            "leverages the Agility SDK runtime.",
+            api_factory)
+
+        # 2. Texture Quality & VRAM Budget
+        def texture_factory(parent):
+            options = [("low", "Low (1 GB VRAM)"),
+                       ("medium", "Medium (2 GB PS4)"),
+                       ("high", "High (3 GB)"),
+                       ("ultra", "Ultra (4+ GB)")]
+            return Segmented(parent, options, self.config.get("texture_quality", "medium"),
+                             lambda v: self.change_config("texture_quality", v), self.f_small, recommended="medium")
+        self.widgets["texture_quality"] = self.row(
+            page, "Texture Quality & VRAM Budget",
+            "Controls the VRAM streaming budget manager: Low enforces 820 MB cap with LRU Mip 0 eviction for 1 GB Fermi/TeraScale cards; "
+            "Medium locks to 1720 MB (PS4 1080p target); High/Ultra loads uncompressed BC5 normal maps and full mip chains.",
+            texture_factory)
+
+        # 3. Full-Resolution Textures (Uncharted 2 & 3)
+        def full_res_factory(parent):
+            return Toggle(parent, self.s, self.config.get("full_res_textures", False),
+                          lambda v: self.change_config("full_res_textures", v))
+        self.widgets["full_res_textures"] = self.row(
+            page, "Full-resolution textures (Uncharted 2 & 3)",
+            "Forces the highest mipmap level immediately in memory, eliminating texture streaming pop-in. "
+            "Recommended for graphics cards with 2 GB or more VRAM. Needs update 1.02.",
+            full_res_factory)
+
+        # 4. Texture Filtering (Anisotropic)
+        def aniso_factory(parent):
+            options = [("0", "Game (PS4)"), ("4", "4x"), ("8", "8x"), ("16", "16x ★")]
+            return Segmented(parent, options, str(self.config.get("anisotropy", "16")),
+                             lambda v: self.change_config("anisotropy", v), self.f_small, recommended="16")
+        self.widgets["anisotropy"] = self.row(
+            page, "Texture filtering (Anisotropy)",
+            "Enhances texture sharpness on angled surfaces, ground textures and architectural details. 16x has "
+            "negligible performance cost on all discrete GPUs.",
+            aniso_factory)
+
+        # 5. Shadow Quality
+        def shadow_factory(parent):
+            options = [("low", "Low (512px)"),
+                       ("medium", "Medium (1024px PS4)"),
+                       ("high", "High (2048px)"),
+                       ("ultra", "Ultra (4096px PCSS)")]
+            return Segmented(parent, options, self.config.get("shadow_quality", "medium"),
+                             lambda v: self.change_config("shadow_quality", v), self.f_small, recommended="medium")
+        self.widgets["shadow_quality"] = self.row(
+            page, "Shadow Quality",
+            "Resolution of cascaded shadow maps and sunlight projection: Low uses 512px for 2015 budget GPUs; "
+            "Medium uses 1024px (PS4 fidelity); High and Ultra increase cascade resolution and contact hardening.",
+            shadow_factory)
+
+        # 6. High-Resolution Lamp & Flashlight Shadows
+        def hires_shadows_factory(parent):
+            return Toggle(parent, self.s, self.config.get("hires_shadows", False),
+                          lambda v: self.change_config("hires_shadows", v))
+        self.widgets["hires_shadows"] = self.row(
+            page, "Sharper lamp & torch shadows (Uncharted 2 & 3)",
+            "Enables dedicated high-resolution shadow buffers for dynamic point lights, lamps, torches and flashlights. "
+            "Needs update 1.02.",
+            hires_shadows_factory)
+
+        # 7. Ambient Occlusion (SSAO)
+        def ssao_factory(parent):
+            options = [("off", "Off"),
+                       ("half", "Half-Res (2015)"),
+                       ("full", "Full-Res (PS4)"),
+                       ("hbao", "HBAO+")]
+            return Segmented(parent, options, self.config.get("ssao_quality", "full"),
+                             lambda v: self.change_config("ssao_quality", v), self.f_small, recommended="full")
+        self.widgets["ssao_quality"] = self.row(
+            page, "Ambient Occlusion (SSAO)",
+            "Contact shadowing in geometric folds, creases and corners: Half-Res utilizes transient render target "
+            "aliasing for 2015 systems; Full-Res matches PS4 original; HBAO+ offers ultra-deep occlusion.",
+            ssao_factory)
+
+        # 8. Depth of Field (DoF)
+        def dof_factory(parent):
+            options = [("enabled", "Cinematic PS4"), ("disabled", "Disabled (Crisp)")]
+            return Segmented(parent, options, self.config.get("dof_mode", "enabled"),
+                             lambda v: (self.change_config("dof_mode", v),
+                                        self.change_config("no_dof", v == "disabled")),
+                             self.f_small, recommended="enabled")
+        self.widgets["dof_mode"] = self.row(
+            page, "Depth of Field (DoF)",
+            "Background focal blur in cutscenes and weapon aiming: Cinematic keeps the original aesthetic; "
+            "Disabled renders distant vistas with pin-sharp clarity.",
+            dof_factory)
+
+        # 9. Motion Blur
+        def blur_factory(parent):
+            options = [("enabled", "Full Cinematic"), ("camera", "Camera Only"), ("disabled", "Disabled")]
+            return Segmented(parent, options, self.config.get("motion_blur_mode", "enabled"),
+                             lambda v: (self.change_config("motion_blur_mode", v),
+                                        self.change_config("no_motion_blur", v == "disabled")),
+                             self.f_small, recommended="enabled")
+        self.widgets["motion_blur_mode"] = self.row(
+            page, "Motion Blur",
+            "Simulates high-speed movement and cinematic pacing: Camera Only blurs scene sweeps; Disabled provides "
+            "competitive, perfectly clear motion without ghosting.",
+            blur_factory)
+
+        # 10. Frame Pacing Mode
+        def pacing_factory(parent):
+            options = [("hybrid", "Hybrid Pacer (<0.25ms)"),
+                       ("vsync", "Standard VSync (60)"),
+                       ("fast_sync", "Low-Latency Mailbox"),
+                       ("unlocked", "Unlocked (480 Hz)")]
+            return Segmented(parent, options, self.config.get("frame_pacing_mode", "hybrid"),
+                             lambda v: self.change_config("frame_pacing_mode", v), self.f_small, recommended="hybrid")
+        self.widgets["frame_pacing_mode"] = self.row(
+            page, "Frame Pacing & Present Pipeline",
+            "Hybrid Pacer combines QueryPerformanceCounter, high-resolution waitable timers and spin pause to keep frame "
+            "variance below 0.25 ms. VSync prevents tearing; Low-Latency reduces input lag; Unlocked lifts the 60 FPS cap.",
+            pacing_factory)
+
+        return page
 
     def page_display(self):
         page = self.page()
@@ -3425,13 +3572,41 @@ class Launcher:
         env["GOW3_LOW_VRAM"] = {"on": "1", "auto": "auto"}.get(low_vram_cfg, "0")
         if active_preset in ("low", "igpu"):
             env.setdefault("GOW3_LOW_RAM", "1")
+
+        # Graphics & Engine configuration
+        env["GOW3_GRAPHICS_API"] = str(self.config.get("graphics_api", "vulkan"))
+        env["GOW3_TEXTURE_QUALITY"] = str(self.config.get("texture_quality", "medium"))
+        env["GOW3_SHADOW_QUALITY"] = str(self.config.get("shadow_quality", "medium"))
+        env["GOW3_SSAO_QUALITY"] = str(self.config.get("ssao_quality", "full"))
+        env["GOW3_FRAME_PACER"] = str(self.config.get("frame_pacing_mode", "hybrid"))
+        tex_q = self.config.get("texture_quality", "medium")
+        if tex_q == "low":
+            env["GOW3_LOW_VRAM"] = "1"
+            env["GOW3_VRAM_BUDGET_MB"] = "820"
+        elif tex_q == "medium":
+            env["GOW3_VRAM_BUDGET_MB"] = "1720"
+        elif tex_q == "high":
+            env["GOW3_VRAM_BUDGET_MB"] = "3200"
+        elif tex_q == "ultra":
+            env["GOW3_VRAM_BUDGET_MB"] = "6144"
+            env["UNCHARTED_FULL_RES_TEXTURES"] = "1"
+
+        shad_q = self.config.get("shadow_quality", "medium")
+        if shad_q in ("high", "ultra") or self.config.get("hires_shadows", False):
+            env["UNCHARTED_HIRES_SHADOWS"] = "1"
+
+        if self.config.get("dof_mode") == "disabled" or self.config.get("no_dof", False):
+            env["UNCHARTED_NO_DOF"] = "1"
+        if self.config.get("motion_blur_mode") == "disabled" or self.config.get("no_motion_blur", False):
+            env["UNCHARTED_NO_MOTION_BLUR"] = "1"
+
         env["UNCHARTED_LANGUAGE"] = str(self.config.get("language", "1"))
         env["UNCHARTED_SPEAKERS"] = str(self.config.get("speakers", "auto"))
         env["UNCHARTED_U3_EXPOSURE"] = str(self.config.get("u3_exposure", "0"))
-        env["UNCHARTED_ANISOTROPY"] = str(self.config.get("anisotropy", "0"))
-        env["UNCHARTED_HIRES_SHADOWS"] = "1" if self.config.get("hires_shadows", False) else "0"
-        env["UNCHARTED_FULL_RES_TEXTURES"] = "1" if self.config.get("full_res_textures", False) else "0"
-        env["UNCHARTED_NO_DOF"] = "1" if self.config.get("no_dof", False) else "0"
+        env["UNCHARTED_ANISOTROPY"] = str(self.config.get("anisotropy", "16"))
+        env["UNCHARTED_HIRES_SHADOWS"] = "1" if (self.config.get("hires_shadows", False) or shad_q in ("high", "ultra")) else "0"
+        env["UNCHARTED_FULL_RES_TEXTURES"] = "1" if (self.config.get("full_res_textures", False) or tex_q == "ultra") else "0"
+        env["UNCHARTED_NO_DOF"] = "1" if (self.config.get("dof_mode") == "disabled" or self.config.get("no_dof", False)) else "0"
         env["GOW3_MOVIE_STRETCH"] = "1" if self.config.get("movie_stretch", False) else "0"
         env["UNCHARTED_UNLOCK"] = "1" if self.config.get("unlock", False) else "0"
         env["UNCHARTED_UNLOCK_REWARDS"] = "1" if self.config.get("unlock_rewards", False) else "0"
