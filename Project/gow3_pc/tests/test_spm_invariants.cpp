@@ -1,3 +1,4 @@
+#include "unc/graphics/spm_graphics_core.hpp"
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Uncharted: Sic Parvis Magna Collection — Comprehensive Mathematical, VRAM & 10,000-Frame Invariant Suite
 
@@ -205,11 +206,52 @@ void TestSection8_ZeroAllocationsAcross10000Presents() {
 
 } // namespace
 
+
+void TestSection9_SpmNativeGraphicsCore() {
+    using namespace unc::core;
+    using namespace unc::graphics;
+
+    auto& core = SpmGraphicsCore::Instance();
+    assert(SUCCEEDED(core.Initialize(GraphicsApi::DirectX9, 1920, 1080, nullptr)));
+    assert(core.IsInitialized());
+    assert(core.GetActiveBackend() != nullptr);
+    assert(core.GetActiveBackend()->GetApi() == GraphicsApi::DirectX9);
+
+    auto& state_cache = core.GetStateCache();
+    state_cache.InvalidateAll();
+    assert(state_cache.PeekDirtyFlags() == SpmStateDirtyBits::All);
+
+    assert(state_cache.UpdatePipeline(0x12345678ULL, 0x87654321ULL));
+    assert(!state_cache.UpdatePipeline(0x12345678ULL, 0x87654321ULL));
+
+    SpmDrawPacket packet{
+        .topology = SpmPrimitiveTopology::TriangleList,
+        .is_indexed = true,
+        .index_count = 36,
+        .instance_count = 1,
+        .first_index = 0,
+        .vertex_offset = 0,
+        .first_instance = 0,
+        .pgm_hash_vs = 0x12345678ULL,
+        .pgm_hash_ps = 0x87654321ULL,
+    };
+    core.RecordDraw(packet);
+    assert(core.GetTotalDrawCalls() >= 1ULL);
+
+    core.RecordDispatch(4, 4, 1);
+    assert(core.GetTotalDispatches() >= 1ULL);
+
+    core.Shutdown();
+    assert(!core.IsInitialized());
+}
+
 int main() {
+
     TestInvariant2_1_ViewportAndAspectDecoupling();
     TestInvariant2_2_InputCoordinateNormalizationAndAxisIndependence();
     TestSection3_VramBudgetsBcCompressionAndTransientAliasing();
     TestSection8_ZeroAllocationsAcross10000Presents();
+    TestSection9_SpmNativeGraphicsCore();
     std::printf("All Uncharted: Sic Parvis Magna Collection invariants (including 10,000-frame zero-allocation & 1GB/2GB VRAM caps) passed.\n");
     return 0;
 }

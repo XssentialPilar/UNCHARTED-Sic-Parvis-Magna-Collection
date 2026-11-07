@@ -2,6 +2,8 @@
 #pragma once
 #include <span>
 #include <string>
+#include <vector>
+#include <atomic>
 #include "common/types.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/regs.h"
@@ -20,11 +22,17 @@ class DebugStateImpl {
 public:
     using CsState = AmdGpu::ComputeProgram;
     bool is_using_fsr{};
-    void IncFlipFrameNum() {}
-    void IncDrawCall() noexcept {}
-    void IncDispatch() noexcept {}
-    void IncGnmFrameNum() {}
-    u32 GetFrameNum() const { return 0; }
+    std::atomic<uint32_t> draw_calls{0};
+    std::atomic<uint32_t> dispatches{0};
+    std::atomic<uint32_t> flip_frames{0};
+
+    void IncFlipFrameNum() noexcept { flip_frames.fetch_add(1, std::memory_order_relaxed); }
+    void IncDrawCall() noexcept { draw_calls.fetch_add(1, std::memory_order_relaxed); }
+    void IncDispatch() noexcept { dispatches.fetch_add(1, std::memory_order_relaxed); }
+    void IncGnmFrameNum() noexcept {}
+    u32 GetFrameNum() const noexcept { return flip_frames.load(std::memory_order_relaxed); }
+    uint32_t GetDrawCallsAndReset() noexcept { return draw_calls.exchange(0, std::memory_order_relaxed); }
+    uint32_t GetDispatchesAndReset() noexcept { return dispatches.exchange(0, std::memory_order_relaxed); }
     bool DumpingCurrentFrame() const { return false; }
     bool DumpingCurrentReg() { return false; }
     bool ShouldPauseInSubmit() const { return false; }

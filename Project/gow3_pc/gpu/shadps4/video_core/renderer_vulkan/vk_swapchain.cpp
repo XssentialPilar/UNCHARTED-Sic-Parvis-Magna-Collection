@@ -19,6 +19,7 @@
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#include "core/debug_state.h"
 #include "apds/apds.h"
 
 namespace Vulkan {
@@ -286,7 +287,9 @@ bool Swapchain::Present() {
         if (!ok) {
             needs_recreation = true;
         }
-        APDS::RecordFramePresent(++s_apds_frame_counter);
+        const uint32_t frame_draws = DebugState.GetDrawCallsAndReset();
+        const uint32_t frame_dispatches = DebugState.GetDispatchesAndReset();
+        APDS::RecordFramePresent(++s_apds_frame_counter, frame_draws, frame_dispatches);
         return !needs_recreation;
     }
     frame_pacer.Wait(fps_cap, vsync, display_hz, pacer_mode);
@@ -311,7 +314,9 @@ bool Swapchain::Present() {
     }
 
     frame_index = (frame_index + 1) % image_count;
-    APDS::RecordFramePresent(++s_apds_frame_counter);
+    const uint32_t wsi_draws = DebugState.GetDrawCallsAndReset();
+    const uint32_t wsi_dispatches = DebugState.GetDispatchesAndReset();
+    APDS::RecordFramePresent(++s_apds_frame_counter, wsi_draws, wsi_dispatches);
 
     return !needs_recreation;
 }

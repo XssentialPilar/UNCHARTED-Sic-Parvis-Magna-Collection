@@ -1921,7 +1921,7 @@ void TextureCache::GarbageCollectImages() {
         }
         return false;
     }();
-    const bool is_low_vram = is_low_vram_target || (total_used_memory <= (u64{2560} << 20));
+    const bool is_low_vram = is_low_vram_target || (instance.IsIntegrated() && trigger_gc_memory <= (u64{2560} << 20));
     if (total_used_memory < trigger_gc_memory) {
         return;
     }
@@ -1938,20 +1938,20 @@ void TextureCache::GarbageCollectImages() {
         pressured = total_used_memory >= pressure_gc_memory;
         aggresive = allow_aggressive && total_used_memory >= critical_gc_memory;
         if (aggresive) {
-            ticks_to_destroy = is_low_vram ? 12 : GcAge(true, true);
-            num_deletions = is_low_vram ? 48 : 32;
+            ticks_to_destroy = is_low_vram ? 30 : GcAge(true, true);
+            num_deletions = is_low_vram ? 16 : 8;
         } else if (pressured) {
-            ticks_to_destroy = is_low_vram ? 35 : GcAge(true, false);
-            num_deletions = is_low_vram ? 8 : 6;
+            ticks_to_destroy = is_low_vram ? 60 : GcAge(true, false);
+            num_deletions = is_low_vram ? 8 : 4;
         } else if (total_used_memory < trigger_gc_memory) {
-            // Smooth decay: actively reclaim non-visible area textures untouched for > 60-90 ticks (~1-1.5s)
+            // Smooth decay: actively reclaim non-visible area textures untouched for > 90-120 ticks (~1.5-2s)
             // Amortized quota: limited to 2 to 4 textures or ~3.0 MB per frame to prevent frametime spikes
-            ticks_to_destroy = is_low_vram ? 60 : 90;
-            num_deletions = is_low_vram ? 4 : 2;
+            ticks_to_destroy = is_low_vram ? 90 : 120;
+            num_deletions = is_low_vram ? 2 : 1;
         } else {
             // Normal amortized trimming above trigger
-            ticks_to_destroy = is_low_vram ? 60 : GcAge(false, false);
-            num_deletions = is_low_vram ? 4 : 3;
+            ticks_to_destroy = is_low_vram ? 90 : GcAge(false, false);
+            num_deletions = is_low_vram ? 4 : 2;
         }
     };
     const auto clean_up = [&](ImageId image_id) {

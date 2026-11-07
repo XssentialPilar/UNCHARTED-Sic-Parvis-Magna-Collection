@@ -511,6 +511,7 @@ add_executable(spm-invariants-test EXCLUDE_FROM_ALL
     ../../native/graphics/dx9_backend.cpp
     ../../native/graphics/dx11_backend.cpp
     ../../native/graphics/dx12_backend.cpp
+    ../../native/graphics/spm_graphics_core.cpp
     ../../native/graphics/dynamic_ring_buffer.cpp
     ../../native/graphics/swapchain_hook.cpp
     ../../native/graphics/transient_rt_pool.cpp
