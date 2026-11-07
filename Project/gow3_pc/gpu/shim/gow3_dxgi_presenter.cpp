@@ -176,12 +176,8 @@ void FramePacer::Wait(int target_fps, bool vsync, double display_hz, PacerMode m
     if (mode == PacerMode::Off || target_fps <= 0 || qpc_freq <= 0) {
         return;
     }
-    // When VSync is active and the FPS cap is at or above the display's hardware refresh rate,
-    // DXGI/Vulkan FIFO VBlank handles pacing directly without software timer intervention.
-    if (vsync && display_hz > 29.0 && static_cast<double>(target_fps) + 0.75 >= display_hz) {
-        next_deadline_ticks = 0.0;
-        return;
-    }
+    // Always enforce target_fps with sub-millisecond precision when target_fps > 0,
+    // protecting against unlocked tear-free refresh rate mismatches (e.g. 120 Hz / 144 Hz displays).
 
     if (target_fps != last_target_fps) {
         last_target_fps = target_fps;

@@ -39,6 +39,34 @@ public:
         return inst;
     }
 
+    static fs::path FindWorkspaceRoot() {
+        if (const char* env = std::getenv("GOW3_DIAGNOSTICS_ROOT"); env && env[0]) {
+            if (fs::exists(env)) return fs::path(env);
+        }
+        if (const char* env = std::getenv("GOW3_ROOT"); env && env[0]) {
+            if (fs::exists(env)) return fs::path(env);
+        }
+        try {
+            fs::path cur = fs::current_path();
+            if (fs::exists(cur / "Diagnostics")) return cur;
+            if (fs::exists(cur.parent_path() / "Diagnostics")) return cur.parent_path();
+        } catch (...) {}
+#ifdef _WIN32
+        char exe_buf[MAX_PATH] = {0};
+        if (GetModuleFileNameA(nullptr, exe_buf, MAX_PATH) > 0) {
+            fs::path p(exe_buf);
+            for (int i = 0; i < 6; ++i) {
+                p = p.parent_path();
+                if (p.empty() || !p.has_relative_path()) break;
+                if (fs::exists(p / "Diagnostics")) {
+                    return p;
+                }
+            }
+        }
+#endif
+        return fs::path("C:/Users/DiegoPorro/Downloads/Uncharted TNDC");
+    }
+
     void Init(TelemetryMode requested_mode, const std::string& custom_session_name) {
         std::lock_guard<std::mutex> lock(init_mutex);
         if (initialized) return;
@@ -68,12 +96,14 @@ public:
         start_time_us = NowUs();
         start_time_iso = FormatIso8601Utc(start_time_us);
 
-        // Session directory naming
+        // Session directory naming anchored to workspace root Diagnostics/Sessions/
         std::string date_str = FormatTimestampForPath(start_time_us);
         std::string rand_suffix = custom_session_name.empty() ? "session" : custom_session_name;
         char buf[32];
         std::snprintf(buf, sizeof(buf), "_%04x", static_cast<unsigned int>(start_time_us & 0xFFFF));
-        session_dir = "Diagnostics/Sessions/" + date_str + buf;
+        fs::path ws_root = FindWorkspaceRoot();
+        fs::path diag_sessions = ws_root / "Diagnostics" / "Sessions";
+        session_dir = (diag_sessions / (date_str + buf)).string();
 
         try {
             fs::create_directories(session_dir);
@@ -127,6 +157,7 @@ public:
 
         FlushBuffers();
         WriteSessionManifest();
+        GenerateNativeReports();
         LaunchReportGenerator();
 
         initialized = false;
@@ -459,11 +490,88 @@ private:
         }
     }
 
+    void GenerateNativeReports() {
+        if (!frame_tracker) return;
+        int64_t end_time_us = NowUs();
+        FrameStatsSummary fs_stats = frame_tracker->CalculateSummary();
+        std::string session_id = fs::path(session_dir).filename().string();
+
+        // 1. Write summary.json
+        std::ofstream json_out(session_dir + "/summary.json");
+        if (json_out.is_open()) {
+            json_out << "{\n"
+                     << "  \"session_id\": \"" << session_id << "\",\n"
+                     << "  \"start_time\": \"" << start_time_iso << "\",\n"
+                     << "  \"end_time\": \"" << FormatIso8601Utc(end_time_us) << "\",\n"
+                     << "  \"duration_seconds\": " << std::fixed << std::setprecision(2) << fs_stats.duration_seconds << ",\n"
+                     << "  \"total_frames\": " << fs_stats.total_frames << ",\n"
+                     << "  \"avg_fps\": " << fs_stats.avg_fps << ",\n"
+                     << "  \"min_fps\": " << fs_stats.min_fps << ",\n"
+                     << "  \"max_fps\": " << fs_stats.max_fps << ",\n"
+                     << "  \"low_1pct_fps\": " << fs_stats.low_1pct_fps << ",\n"
+                     << "  \"low_01pct_fps\": " << fs_stats.low_01pct_fps << ",\n"
+                     << "  \"p50_frame_time_ms\": " << fs_stats.p50_ms << ",\n"
+                     << "  \"p95_frame_time_ms\": " << fs_stats.p95_ms << ",\n"
+                     << "  \"p99_frame_time_ms\": " << fs_stats.p99_ms << ",\n"
+                     << "  \"avg_jitter_ms\": " << fs_stats.avg_jitter_ms << ",\n"
+                     << "  \"total_stutters\": " << fs_stats.total_stutters << "\n"
+                     << "}\n";
+        }
+
+        // 2. Generate performance_report.md
+        std::stringstream md;
+        md << "# APDS Performance & Diagnostics Report: `" << session_id << "`\n\n";
+        md << "**Estado General:** `" << (fs_stats.low_1pct_fps >= 50.0 && fs_stats.total_stutters == 0 ? "HEALTHY" : "DEGRADED") << "`  \n";
+        md << "**Plataforma:** " << hardware.cpu.brand << " | " << hardware.primary_gpu.adapter_name
+           << " (" << std::fixed << std::setprecision(1) << (hardware.primary_gpu.dedicated_vram_bytes / (1024.0 * 1024.0)) << " MB VRAM) | "
+           << (hardware.total_ram_bytes / (1024.0 * 1024.0 * 1024.0)) << " GB RAM\n\n";
+
+        md << "## Resumen de Rendimiento (Frame Pacing & FPS)\n\n";
+        md << "| Métrica | Valor | Objetivo Invariante | Evaluación |\n";
+        md << "| :--- | :--- | :--- | :--- |\n";
+        md << "| **FPS Promedio** | **" << std::fixed << std::setprecision(2) << fs_stats.avg_fps << " FPS** | 60.0 FPS | " << (fs_stats.avg_fps >= 59.0 ? "✅ Estable" : "⚠️ Caída") << " |\n";
+        md << "| **1% Low FPS** | **" << fs_stats.low_1pct_fps << " FPS** | >= 50.0 FPS | " << (fs_stats.low_1pct_fps >= 50.0 ? "✅ Excelente" : "⚠️ Micro-stuttering") << " |\n";
+        md << "| **0.1% Low FPS** | **" << fs_stats.low_01pct_fps << " FPS** | >= 40.0 FPS | " << (fs_stats.low_01pct_fps >= 40.0 ? "✅ Excelente" : "⚠️ Caída puntual") << " |\n";
+        md << "| **P50 Frame Time** | **" << fs_stats.p50_ms << " ms** | 16.66 ms | " << (std::abs(fs_stats.p50_ms - 16.66) < 1.5 ? "✅ Óptimo" : "⚠️ Desviado") << " |\n";
+        md << "| **P95 Frame Time** | **" << fs_stats.p95_ms << " ms** | <= 18.0 ms | " << (fs_stats.p95_ms <= 18.0 ? "✅ Fluido" : "⚠️ Inestable") << " |\n";
+        md << "| **P99 Frame Time** | **" << fs_stats.p99_ms << " ms** | <= 22.0 ms | " << (fs_stats.p99_ms <= 22.0 ? "✅ Estable" : "⚠️ Picos detectados") << " |\n";
+        md << "| **Jitter Medio** | **" << fs_stats.avg_jitter_ms << " ms** | <= 0.8 ms | " << (fs_stats.avg_jitter_ms <= 0.8 ? "✅ Sincronizado" : "⚠️ Desincronizado") << " |\n";
+        md << "| **Stutters Detectados** | **" << fs_stats.total_stutters << "** | 0 | " << (fs_stats.total_stutters == 0 ? "✅ Cero Stutters" : "⚠️ Tirones registrados") << " |\n\n";
+
+        std::string md_content = md.str();
+        std::ofstream md_session(session_dir + "/performance_report.md");
+        if (md_session.is_open()) {
+            md_session << md_content;
+        }
+
+        // Replicate directly to workspace root and Diagnostics folder
+        fs::path ws = FindWorkspaceRoot();
+        try {
+            std::ofstream md_diag((ws / "Diagnostics" / "LATEST_PERFORMANCE_REPORT.md").string());
+            if (md_diag.is_open()) md_diag << md_content;
+
+            std::ofstream md_root((ws / "LATEST_PERFORMANCE_REPORT.md").string());
+            if (md_root.is_open()) md_root << md_content;
+
+            std::ofstream json_diag((ws / "Diagnostics" / "latest_summary.json").string());
+            if (json_diag.is_open()) {
+                json_diag << "{\n"
+                          << "  \"session_id\": \"" << session_id << "\",\n"
+                          << "  \"avg_fps\": " << fs_stats.avg_fps << ",\n"
+                          << "  \"p50_ms\": " << fs_stats.p50_ms << ",\n"
+                          << "  \"total_frames\": " << fs_stats.total_frames << ",\n"
+                          << "  \"total_stutters\": " << fs_stats.total_stutters << "\n"
+                          << "}\n";
+            }
+        } catch (...) {}
+    }
+
     void LaunchReportGenerator() {
 #ifdef _WIN32
-        std::string script_path = "Diagnostics/Tools/report_generator.py";
-        if (fs::exists(script_path)) {
-            std::string cmd = "python \"" + script_path + "\" --session \"" + session_dir + "\"";
+        fs::path ws = FindWorkspaceRoot();
+        fs::path script = ws / "Diagnostics" / "Tools" / "report_generator.py";
+        if (fs::exists(script)) {
+            std::string cmd = "python \"" + script.string() + "\" --session \"" + session_dir + "\"";
             STARTUPINFOA si{};
             si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;

@@ -474,6 +474,20 @@ tr:last-child td {{ border-bottom: none; }}
     with open(session_path / "performance_report.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
+    # Replicate latest report to root and Diagnostics folder for instant access
+    try:
+        import shutil
+        ws_root = Path(__file__).resolve().parent.parent.parent
+        diag_root = ws_root / "Diagnostics"
+        diag_root.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(session_path / "performance_report.md", diag_root / "LATEST_PERFORMANCE_REPORT.md")
+        shutil.copy2(session_path / "performance_report.md", ws_root / "LATEST_PERFORMANCE_REPORT.md")
+        shutil.copy2(session_path / "summary.json", diag_root / "latest_summary.json")
+        shutil.copy2(session_path / "performance_report.html", diag_root / "LATEST_PERFORMANCE_REPORT.html")
+    except Exception as e:
+        print(f"APDS Warning: Could not replicate latest reports: {e}", file=sys.stderr)
+
     print(f"APDS: Reports successfully generated in {session_path}")
 
 

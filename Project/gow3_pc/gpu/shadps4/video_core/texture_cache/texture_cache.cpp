@@ -1867,8 +1867,13 @@ void TextureCache::GarbageCollectImages() {
             return env && env[0] && env[0] != '0';
         }();
         if (instance.IsIntegrated() || forced_budget || !startup_rule) {
-            u64 budget = forced_budget ? std::min(forced_budget, budget_now ? budget_now : forced_budget)
+            u64 budget = budget_now;
+            if (low_vram_flag || (forced_budget && forced_budget <= (u64{1024} << 20))) {
+                budget = forced_budget ? std::min(forced_budget, budget_now ? budget_now : forced_budget)
                                        : budget_now;
+            } else if (forced_budget && (!budget_now || budget_now <= (u64{3072} << 20))) {
+                budget = forced_budget;
+            }
             if (budget != 0) {
                 // Strict 1 GB target ceiling: 859,832,320 bytes (~820 MB effective physical cap)
                 // Applied specifically when budget <= 1024 MB
@@ -1917,9 +1922,7 @@ void TextureCache::GarbageCollectImages() {
         return false;
     }();
     const bool is_low_vram = is_low_vram_target || (total_used_memory <= (u64{2560} << 20));
-    // Smooth trim for non-visible textures every 30/60 ticks with hysteresis
-    const bool periodic_stale_sweep = (gc_tick % (is_low_vram ? 30 : 60) == 0);
-    if (total_used_memory < trigger_gc_memory && !periodic_stale_sweep) {
+    if (total_used_memory < trigger_gc_memory) {
         return;
     }
     std::scoped_lock lock{mutex};
