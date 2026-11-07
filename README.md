@@ -1,6 +1,6 @@
 # UNCHARTED: Sic Parvis Magna Collection
 
-![Uncharted: Sic Parvis Magna Collection Architecture](Project/docs/diagram.png)
+
 
 > **"Sic Parvis Magna"** — *Greatness from small beginnings.*
 >
