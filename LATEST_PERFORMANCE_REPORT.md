@@ -164,3 +164,42 @@ Todas las suites de prueba fueron compiladas y ejecutadas exitosamente con Clang
    - Verificó asignaciones estables en memoria de host y arenas: **PASS**.
 5. **`tools/Package.ps1`:**
    - Empaquetó todos los binarios (`Uncharted.exe`, `gow3-probe.exe`, `uncharted_probe.exe`, `launcher/uncharted_launcher.pyw`, `tools/probe_uncharted.py`, `vendor/directx9/`) en `Distribution/Uncharted/` con hashes SHA256 actualizados: **PASS**.
+
+
+---
+
+## 5. Ejecución Directiva SPM Native Graphics Architecture (Fases 1, 2 y 3)
+
+### 5.1 FASE 1 — Auditoría y Medición Empírica en Sesión Activa
+- **Sesión Analizada:** Project/diagnostics/Sessions/2026-11-07_16-03-51_cba6 (48,475 fotogramas continuos en hardware real).
+- **Métricas Base Registradas:**
+  - **FPS Promedio:** 51.9 FPS (Frametime promedio: 19.26 ms).
+  - **P50 Frametime:** 18.88 ms (~53.0 FPS).
+  - **P95 Frametime:** 24.09 ms (~41.5 FPS).
+  - **P99 Frametime (1% Low):** 30.33 ms (33.0 FPS).
+  - **Uso de GPU:** 46.1% promedio (consumiendo únicamente 32.0W a 34.0W de los 82.0W disponibles en la RTX 5050 Laptop).
+  - **Uso de CPU:** ~34% del proceso (hilos balanceados en Ryzen 5 240, 12 hilos).
+- **Cuello de Botella Crítico Localizado:**
+  - El archivo 
+esources.jsonl registró un total anómalo de **113,459 subidas de texturas (UPLOAD) y 12,317 desalojos forzados (EVICT)**.
+  - La condición en 	exture_cache.cpp: is_low_vram = is_low_vram_target || (total_used_memory <= (u64{2560} << 20)) provocaba que cualquier GPU dedicada con 8 GB de VRAM que consumiera menos de 2.5 GB fuese clasificada erróneamente como dispositivo de memoria crítica.
+  - Como resultado, el recolector destruía texturas no dibujadas en los últimos 12 fotogramas (	icks_to_destroy = 12, 100 ms), obligando al motor a desentrelazar y re-subir texturas continuamente a través del bus PCIe.
+
+### 5.2 FASE 2 — Mejoras Inmediatas de Alto Impacto
+1. **Eliminación del Bucle de Thrashing en TextureCache:**
+   - Se corrigió la condición de detección para evaluar GPUs integradas reales o presupuestos forzados (instance.IsIntegrated() && trigger_gc_memory <= 2560 MB).
+   - Se aumentó la histéresis mínima de retención a 30-90 ticks para mallas y texturas de escena, erradicando los desalojos instantáneos en la RTX 5050.
+2. **Telemetría Exacta de Comandos GPU:**
+   - Se implementaron contadores atómicos draw_calls, dispatches y lip_frames en Project/gow3_pc/gpu/shim/core/debug_state.h.
+   - Se vincularon a las llamadas RecordFramePresent en k_swapchain.cpp, permitiendo que APDS registre el conteo real de draw calls por fotograma en rame_times.csv.
+
+### 5.3 FASE 3 — Implementación de SPM Graphics Core
+- **Módulo Creado:** Project/include/unc/graphics/spm_graphics_core.hpp y Project/native/graphics/spm_graphics_core.cpp.
+- **Componentes Incorporados:**
+  1. **Representación Intermedia de Comandos:** Estructura SpmDrawPacket con topología, índices, offsets de vértice e instancias, independiente de la API subyacente.
+  2. **Cache de Estados con Bitmask Dirty Flags:** Clase SpmStateCache que previene cambios redundantes de pipeline, blend, depth-stencil y rasterizador.
+  3. **Interfaz Unificada de Renderizadores:** Clase abstracta ISpmBackend con implementaciones NativeDx9SpmBackend y backends modulares.
+- **Validación Automatizada:** Incorporada TestSection9_SpmNativeGraphicsCore en spm-invariants-test.exe:
+  - Inicialización limpia de backend Direct3D 9Ex nativo.
+  - Eliminación de cambios redundantes comprobada mediante bitmasks.
+  - Registro y despacho de comandos de dibujo: **PASS (Exit Code 0)**.
