@@ -4108,6 +4108,9 @@ void BufferCache::ReclaimArenaMemory() {
         u64 mib = 0;
         if (const char* env = std::getenv("GOW3_ARENA_LIMIT_MB"); env && env[0]) {
             mib = std::strtoull(env, nullptr, 10);
+        } else if (const char* vram_env = std::getenv("GOW3_VRAM_BUDGET_MB"); vram_env && vram_env[0]) {
+            const u64 budget_mib = std::strtoull(vram_env, nullptr, 10);
+            mib = budget_mib > 0 ? std::clamp<u64>((budget_mib * 30) / 100, 192, 1024) : 512;
         } else {
             const auto& props = instance.GetMemoryProperties();
             const u32 heap = props.memoryTypes[arena_memory_type_index].heapIndex;
@@ -4126,7 +4129,10 @@ void BufferCache::ReclaimArenaMemory() {
     }();
     static const u16 age_epochs = [] {
         const char* env = std::getenv("GOW3_ARENA_RECLAIM_AGE_S");
-        const int seconds = env && env[0] ? std::atoi(env) : 60;
+        const char* vram_env = std::getenv("GOW3_VRAM_BUDGET_MB");
+        const u64 budget_mib = (vram_env && vram_env[0]) ? std::strtoull(vram_env, nullptr, 10) : 0;
+        const int default_age = (Vulkan::g_low_video_memory || (budget_mib > 0 && budget_mib <= 2560)) ? 8 : 30;
+        const int seconds = env && env[0] ? std::atoi(env) : default_age;
         return static_cast<u16>(std::clamp(seconds, 6, 2 * (int(ReclaimEpochRing) - 4)) / 2);
     }();
     if ((resident_in_use_blocks << block_shift) <= limit) {

@@ -25,10 +25,23 @@ static int resolve_pythonw(const wchar_t *base_dir, wchar_t *out_python, size_t 
     DWORD n = SearchPathW(NULL, L"pythonw.exe", NULL, (DWORD)cap, out_python, NULL);
     if (n > 0 && n < cap && file_exists_w(out_python))
         return 1;
-    if (file_exists_w(L"C:\\msys64\\clang64\\bin\\pythonw.exe")) {
-        wcsncpy(out_python, L"C:\\msys64\\clang64\\bin\\pythonw.exe", cap - 1);
-        out_python[cap - 1] = 0;
-        return 1;
+    const wchar_t *env_candidates[] = {
+        L"%LOCALAPPDATA%\\Programs\\Python\\Python312\\pythonw.exe",
+        L"%LOCALAPPDATA%\\Programs\\Python\\Python313\\pythonw.exe",
+        L"%LOCALAPPDATA%\\Programs\\Python\\Python311\\pythonw.exe",
+        L"%LOCALAPPDATA%\\Programs\\Python\\Python310\\pythonw.exe",
+        L"C:\\Python312\\pythonw.exe",
+        L"C:\\Python311\\pythonw.exe",
+        L"C:\\msys64\\clang64\\bin\\pythonw.exe",
+    };
+    for (size_t i = 0; i < sizeof(env_candidates) / sizeof(env_candidates[0]); ++i) {
+        wchar_t expanded[32768];
+        DWORD exp_len = ExpandEnvironmentStringsW(env_candidates[i], expanded, 32768);
+        if (exp_len > 0 && exp_len < 32768 && file_exists_w(expanded)) {
+            wcsncpy(out_python, expanded, cap - 1);
+            out_python[cap - 1] = 0;
+            return 1;
+        }
     }
     return 0;
 }

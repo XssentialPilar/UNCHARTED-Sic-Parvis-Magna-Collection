@@ -6,7 +6,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ParentDir = Split-Path -Parent $PSScriptRoot
+if (Test-Path (Join-Path $ParentDir "Project\gow3_pc")) {
+    $ProjectRoot = Join-Path $ParentDir "Project"
+} else {
+    $ProjectRoot = $ParentDir
+}
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $ProjectRoot "analysis\uncharted-user\cache"
 }

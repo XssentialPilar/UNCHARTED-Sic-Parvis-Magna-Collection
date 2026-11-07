@@ -40,6 +40,7 @@ inline constexpr unsigned DefaultItems = Fps | FrameTime | Upscaler;
 
 struct Sample {
     float fps = 0.0f, frame_ms = 0.0f;
+    std::string api_tag;
     std::string upscaler;
     std::string gpu_name;
     float gpu_percent = -1.0f, cpu_percent = -1.0f;
@@ -77,6 +78,10 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
     };
     // "°C" as UTF-8; the overlay's DejaVu Sans font has it.
     constexpr const char* degree = "\xc2\xb0" "C";
+    if (!s.api_tag.empty() && (mask & (Fps | FrameTime | Upscaler))) {
+        std::snprintf(part, sizeof(part), "%s", s.api_tag.c_str());
+        add();
+    }
     if (mask & Fps) {
         std::snprintf(part, sizeof(part), "%.0f FPS", s.fps);
         add();

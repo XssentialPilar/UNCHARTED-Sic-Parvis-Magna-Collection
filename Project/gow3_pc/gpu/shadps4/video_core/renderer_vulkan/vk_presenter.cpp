@@ -902,12 +902,12 @@ void Presenter::PresentLoadingFrame() {
     barrier(vk::ImageLayout::eColorAttachmentOptimal, swapchain.FinalLayout(),
             vk::AccessFlagBits::eColorAttachmentWrite, {});
     SubmitInfo info{};
-    if (!swapchain.IsHeadless()) {
+    if (!swapchain.UsesOffscreenPresent()) {
         info.AddWait(swapchain.GetImageAcquiredSemaphore());
         info.AddSignal(swapchain.GetPresentReadySemaphore());
     }
     present_scheduler.Flush(info);
-    if (swapchain.IsHeadless()) present_scheduler.Finish();
+    if (swapchain.UsesOffscreenPresent()) present_scheduler.Finish();
     {
         std::scoped_lock present_lock{PresentLock(instance)};
         swapchain.Present();
@@ -1223,15 +1223,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Flush vulkan commands.
 
     SubmitInfo info{};
-    if (!swapchain.IsHeadless()) info.AddWait(swapchain.GetImageAcquiredSemaphore());
+    if (!swapchain.UsesOffscreenPresent()) info.AddWait(swapchain.GetImageAcquiredSemaphore());
     info.AddWait(frame->ready_semaphore, frame->ready_tick);
-    if (!swapchain.IsHeadless()) info.AddSignal(swapchain.GetPresentReadySemaphore());
+    if (!swapchain.UsesOffscreenPresent()) info.AddSignal(swapchain.GetPresentReadySemaphore());
     info.AddSignal(frame->present_done);
     scheduler.Flush(info);
-    // No WSI acquire/present semaphores exist offscreen. Finish the real GPU
-    // submission before image reuse; the frame-ready timeline and present-done
-    // fence above remain intact. This mode prioritizes diagnostics over speed.
-    if (swapchain.IsHeadless()) scheduler.Finish();
+    // No Vulkan WSI acquire/present semaphores exist offscreen or when presenting through the
+    // zero-copy D3D11/D3D12 DXGI flip-model bridge: synchronize GPU completion before present.
+    if (swapchain.UsesOffscreenPresent()) scheduler.Finish();
 
     // Present to swapchain.
     {

@@ -25,6 +25,27 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
         const float value = env ? static_cast<float>(std::atof(env)) : 0.0f;
         return value >= 2.0f ? std::min(value, 16.0f) : 0.0f;
     }();
+    // SPM Master README Section 3.2: Global Mipmap LOD Bias (+1.0 on 1 GB / Low VRAM, +0.35 on 2 GB)
+    // slashes active texture working set by up to 75% on world colour samplers while leaving UI,
+    // LUTs, render targets, and shadow compare samplers untouched.
+    static const float global_mip_lod_bias = [] {
+        const char* env = std::getenv("GOW3_MIP_LOD_BIAS");
+        const float value = env && env[0] ? static_cast<float>(std::atof(env)) : 0.0f;
+        if (value != 0.0f) {
+            std::printf("GPU: Global world texture Mip LOD bias %.2f active (GOW3_MIP_LOD_BIAS)\n",
+                        value);
+        }
+        return std::clamp(value, -2.0f, 3.0f);
+    }();
+    const bool apply_world_lod_bias =
+        global_mip_lod_bias != 0.0f && !is_depth &&
+        sampler.mip_filter != AmdGpu::MipFilter::None && sampler.MaxLod() >= 2.0f;
+    const float effective_lod_bias =
+        extra_lod_bias + (apply_world_lod_bias ? global_mip_lod_bias : 0.0f);
+    const float effective_min_lod =
+        (apply_world_lod_bias && global_mip_lod_bias > 0.0f)
+            ? std::min(sampler.MaxLod(), std::max(sampler.MinLod(), global_mip_lod_bias))
+            : sampler.MinLod();
     const bool force_aniso = forced_aniso > 0.0f && !is_depth &&
                              sampler.xy_min_filter != AmdGpu::Filter::Point &&
                              sampler.xy_min_filter != AmdGpu::Filter::AnisoPoint &&
@@ -127,7 +148,7 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
         .addressModeU = address(sampler.clamp_x),
         .addressModeV = address(sampler.clamp_y),
         .addressModeW = address(sampler.clamp_z),
-        .mipLodBias = std::clamp(sampler.LodBias() + extra_lod_bias, -instance.MaxSamplerLodBias(),
+        .mipLodBias = std::clamp(sampler.LodBias() + effective_lod_bias, -instance.MaxSamplerLodBias(),
                                  instance.MaxSamplerLodBias()),
         .anisotropyEnable = anisotropy_enable,
         .maxAnisotropy = max_anisotropy,
@@ -136,11 +157,11 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
         .compareOp = sampler_compare_override == 1   ? vk::CompareOp::eNever
                      : sampler_compare_override == 2 ? vk::CompareOp::eAlways
                                                       : LiverpoolToVK::DepthCompare(sampler.depth_compare_func),
-        .minLod = sampler.MinLod(),
+        .minLod = effective_min_lod,
         // gow3 1 Nov 2026: a garbage S# (resource table slots holding other data) can have
         // min LOD > max LOD, which Vulkan forbids (VUID-VkSamplerCreateInfo-maxLod-01973). Real
         // S#s never do. GOW3_TSHARP_GUARD=0: as given (tests).
-        .maxLod = guard_lod ? std::max(sampler.MinLod(), sampler.MaxLod()) : sampler.MaxLod(),
+        .maxLod = guard_lod ? std::max(effective_min_lod, sampler.MaxLod()) : sampler.MaxLod(),
         .borderColor = border_color,
         .unnormalizedCoordinates = false, // Handled in shader due to Vulkan limitations.
     };

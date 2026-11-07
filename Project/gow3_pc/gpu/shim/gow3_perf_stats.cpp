@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "gow3_perf_stats.h"
+#include "gow3_dxgi_presenter.h"
 
 #include <atomic>
 #include <cctype>
@@ -402,8 +403,13 @@ void Start(const Vulkan::Instance& instance) {
 }
 
 Sample Latest() {
-    std::scoped_lock lock{mutex};
-    return latest;
+    Sample out;
+    {
+        std::scoped_lock lock{mutex};
+        out = latest;
+    }
+    out.api_tag = Gow3Dxgi::ApiOverlayTag(Gow3Dxgi::ActiveApi());
+    return out;
 }
 
 } // namespace Gow3PerfStats

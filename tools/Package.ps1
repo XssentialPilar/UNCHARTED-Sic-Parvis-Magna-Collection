@@ -5,8 +5,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
-$WorkspaceRoot = Split-Path -Parent $ProjectRoot
+$ParentDir = Split-Path -Parent $PSScriptRoot
+if (Test-Path (Join-Path $ParentDir "Project\gow3_pc")) {
+    $WorkspaceRoot = $ParentDir
+    $ProjectRoot = Join-Path $WorkspaceRoot "Project"
+} else {
+    $ProjectRoot = $ParentDir
+    $WorkspaceRoot = Split-Path -Parent $ProjectRoot
+}
 $BuildDir = Join-Path $WorkspaceRoot "Build\Windows"
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $WorkspaceRoot "Distribution\Uncharted"

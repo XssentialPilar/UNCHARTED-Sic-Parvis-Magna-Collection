@@ -1535,6 +1535,22 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     resolution = (os.environ.get(f"UNCHARTED_RESOLUTION_{game_key.upper()}")
                   or os.environ.get("UNCHARTED_RESOLUTION", "")).lower()
     width, height = (int(value) for value in resolution.split("x")) if resolution else (1920, 1080)
+    requested_output = (os.environ.get(f"UNCHARTED_OUTPUT_RES_{game_key.upper()}")
+                        or os.environ.get("UNCHARTED_OUTPUT_RES", "")).lower()
+    raw_vram_budget = os.environ.get("GOW3_VRAM_BUDGET_MB", "").strip()
+    vram_budget_mb = int(raw_vram_budget) if raw_vram_budget.isdigit() else 0
+    if 0 < vram_budget_mb <= 1024 and height > 720 and os.environ.get("UNCHARTED_ALLOW_OVERSIZE_VRAM") != "1":
+        if not requested_output:
+            requested_output = f"{width}x{height}"
+        aspect = width / max(height, 1)
+        width, height = max(640, int(round(720 * aspect)) // 16 * 16), 720
+        print(f"VRAM Hard Cap ({vram_budget_mb} MB / 1 GB target): internal render clamped to {width}x{height} (output {requested_output})")
+    elif 1024 < vram_budget_mb <= 2048 and height > 1080 and os.environ.get("UNCHARTED_ALLOW_OVERSIZE_VRAM") != "1":
+        if not requested_output:
+            requested_output = f"{width}x{height}"
+        aspect = width / max(height, 1)
+        width, height = max(1280, int(round(1080 * aspect)) // 16 * 16), 1080
+        print(f"VRAM Hard Cap ({vram_budget_mb} MB / 2 GB target): internal render clamped to {width}x{height} (output {requested_output})")
     render_size = (1920, 1080)
     if (width, height) != (1920, 1080):
         # (The earlier Uncharted 3 failures above 1080p - "Command context dcb full", a corrupted
@@ -1567,11 +1583,42 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     else:
         extra_mib = 0
     env = os.environ.copy()
+    api = os.environ.get("GOW3_GRAPHICS_API", "vulkan").strip().lower() or "vulkan"
+    tex_q = os.environ.get("GOW3_TEXTURE_QUALITY", "medium").strip().lower() or "medium"
+    shad_q = os.environ.get("GOW3_SHADOW_QUALITY", "medium").strip().lower() or "medium"
+    ssao_q = os.environ.get("GOW3_SSAO_QUALITY", "full").strip().lower() or "full"
+    pacer = os.environ.get("GOW3_FRAME_PACER", "hybrid").strip().lower() or "hybrid"
+    env["GOW3_GRAPHICS_API"] = api
+    env["GOW3_FRAME_PACER"] = pacer
+    if vram_budget_mb > 0:
+        env["GOW3_VRAM_BUDGET_MB"] = str(vram_budget_mb)
+        env.setdefault("GOW3_GC_BUDGET_MB", str(vram_budget_mb))
+        if vram_budget_mb <= 1024:
+            env.setdefault("GOW3_LOW_VRAM", "1")
+            env.setdefault("GOW3_ARENA_LIMIT_MB", "240")
+            env.setdefault("GOW3_MIP_LOD_BIAS", "1.0" if tex_q == "low" else "0.65")
+        elif vram_budget_mb <= 2048:
+            env.setdefault("GOW3_LOW_VRAM", "1")
+            env.setdefault("GOW3_ARENA_LIMIT_MB", "500")
+            if tex_q == "low":
+                env.setdefault("GOW3_MIP_LOD_BIAS", "1.0")
+            elif tex_q == "medium":
+                env.setdefault("GOW3_MIP_LOD_BIAS", "0.35")
+    elif tex_q == "low":
+        env.setdefault("GOW3_MIP_LOD_BIAS", "0.75")
+
     wanted = cheat_names(executable)
     rewards = os.environ.get("UNCHARTED_UNLOCK_REWARDS", "0") == "1"
-    quality = [name for name in ("hires_shadows", "full_res_textures", "no_dof", "no_motion_blur")
-               if os.environ.get("UNCHARTED_" + name.upper(), "0") == "1"
-               and name in QUALITY_POKES.get(executable, {})]
+    quality = []
+    for name in ("hires_shadows", "full_res_textures", "no_dof", "no_motion_blur"):
+        if os.environ.get("UNCHARTED_" + name.upper(), "0") != "1":
+            continue
+        if name == "full_res_textures" and (tex_q in ("low", "medium") or (0 < vram_budget_mb <= 1024)):
+            continue
+        if name == "hires_shadows" and (shad_q in ("low", "medium") or (0 < vram_budget_mb <= 1024)):
+            continue
+        if name in QUALITY_POKES.get(executable, {}):
+            quality.append(name)
     if (wanted or rewards or quality) and "GOW3_POKE" not in env:
         if (game_version(game) or "") >= "01.02":
             pokes = [CHEATS[executable][name] for name in wanted if name in CHEATS.get(executable, {})]
@@ -1588,22 +1635,26 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
                 env["GOW3_POKE"] = ",".join(pokes)
         else:
             print("Cheats and unlocked rewards: need update 1.02 (not used)")
-    api = os.environ.get("GOW3_GRAPHICS_API", "vulkan")
-    tex_q = os.environ.get("GOW3_TEXTURE_QUALITY", "medium")
-    shad_q = os.environ.get("GOW3_SHADOW_QUALITY", "medium")
-    ssao_q = os.environ.get("GOW3_SSAO_QUALITY", "full")
-    pacer = os.environ.get("GOW3_FRAME_PACER", "hybrid")
-    print(f"Engine Architecture: API={api.upper()} | Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}")
+    print(
+        f"Engine Architecture: API={api.upper()} | VRAMCap={vram_budget_mb or 'Auto'}MB | "
+        f"Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}"
+    )
     # Texture filtering (launcher -> Advanced -> Texture filtering): sampler.cpp GOW3_ANISOTROPY raises
     # mipmapped colour textures to at least that ratio (~0% FPS measured in Uncharted 2).
     if (aniso := os.environ.get("UNCHARTED_ANISOTROPY", "0")) in ("2", "4", "8", "16"):
         env.setdefault("GOW3_ANISOTROPY", aniso)
         print(f"Texture filtering: {aniso}x")
     # Measurement logging and live trigger files (frame/fault/wait statistics every 5 s, GPU
-    # checkpoints, capture/readback/DMA triggers). On unless the launcher turns it off.
-    diagnostics = env.get("UNCHARTED_DIAGNOSTICS", "1") != "0"
+    # checkpoints, capture/readback/DMA triggers). Off by default so normal gameplay runs without
+    # per-draw buffer logging CPU overhead; enable via UNCHARTED_DIAGNOSTICS=1 when profiling.
+    diagnostics = env.get("UNCHARTED_DIAGNOSTICS", "0") == "1"
     msys = Path(env.get("MSYS2_ROOT", "C:/msys64"))
-    env["PATH"] = str(msys / "clang64/bin") + os.pathsep + env.get("PATH", "")
+    codex_msys = Path.home() / ".codex/tmp/uncharted-build/msys64/clang64/bin"
+    extra_bins = [str(ROOT / "gow3_pc/out")]
+    if codex_msys.is_dir():
+        extra_bins.append(str(codex_msys))
+    extra_bins.append(str(msys / "clang64/bin"))
+    env["PATH"] = os.pathsep.join(extra_bins) + os.pathsep + env.get("PATH", "")
     # UNCHARTED_TEST_GPU_USER_DIR: GPU caches in another folder (tests from an empty shader cache).
     env["GOW3_GPU_USER_DIR"] = env.get("UNCHARTED_TEST_GPU_USER_DIR") or str(user)
     settings = user / f"probe-{game_key}.ini"
@@ -1760,8 +1811,7 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     # nothing, then FSR 1 when its setting is on or a bilinear stretch. The HUD and menus are
     # drawn after that at the output size (TemporalUpscaler::OnComposite). Needs the temporal
     # anti-aliasing's camera tracking.
-    output = (os.environ.get(f"UNCHARTED_OUTPUT_RES_{game_key.upper()}")
-              or os.environ.get("UNCHARTED_OUTPUT_RES", "")).lower()
+    output = requested_output
     if "x" not in output and render_size != (width, height):
         # Drake's Fortune above the size it can render at: that size is upscaled to the one chosen,
         # with FSR 1 unless a temporal upscaler is chosen (the presets' FSR 1 to the screen before).
@@ -1780,10 +1830,11 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     pad_file=user / "probe-pad.txt"
     pad_file.write_text("",encoding="ascii")
     env["GOW3_PAD_FILE"] = str(pad_file)
-    # Start with a serialized renderer while investigating Uncharted loading.
-    # The base runtime enables these concurrency optimizations for GOW3.
-    env.setdefault("GOW3_DRAW_PIPE", "0")
-    env.setdefault("GOW3_VK_RECORD_THREAD", "0")
+    # Default to multithreaded draw pipe + Vulkan record thread + skip redundant swapchain clear.
+    env.setdefault("GOW3_DRAW_PIPE", "1")
+    env.setdefault("GOW3_VK_RECORD_THREAD", "1")
+    env.setdefault("GOW3_SKIP_IB_DRAIN", "1")
+    env.setdefault("GOW3_PRESENT_SKIP_CLEAR", "1")
     env.setdefault("GOW3_NATIVE_TSC", "1")
     # Grey-world diagnosis: timestamped opens/reads of level packs and streams (boot.log).
     # env.setdefault("GOW3_FILE_TRACE", ".pak")  # pack read trace (grey-world diagnosis, done)

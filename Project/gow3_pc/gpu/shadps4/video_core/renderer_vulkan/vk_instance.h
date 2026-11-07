@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <cstring>
 #include <span>
 #include <unordered_map>
 
@@ -71,6 +72,18 @@ public:
     /// Returns the Vulkan device
     vk::Device GetDevice() const {
         return *device;
+    }
+
+    /// SPM: Win32 external memory interop & DXGI adapter LUID matching for D3D11/D3D12 presenters.
+    bool HasExternalMemoryWin32() const {
+        return external_memory_win32;
+    }
+    bool GetDeviceLuid(u8 out_luid[8]) const {
+        if (!vk11_props.deviceLUIDValid) {
+            return false;
+        }
+        std::memcpy(out_luid, vk11_props.deviceLUID.data(), 8);
+        return true;
     }
 
     const vk::PipelineBinaryKeyKHR& GetPipelineBinaryGlobalKey() const {
@@ -657,6 +670,7 @@ private:
     bool mixed_float_dot_product{}; // gow3: VK_VALVE_shader_mixed_float_dot_product (FSR 4.1.1)
     bool supports_memory_budget{};
     bool supports_block_texel_view{};
+    bool external_memory_win32{};
     u64 total_memory_budget{};
     std::vector<size_t> valid_heaps;
 };

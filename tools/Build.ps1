@@ -9,8 +9,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
-$WorkspaceRoot = Split-Path -Parent $ProjectRoot
+$ParentDir = Split-Path -Parent $PSScriptRoot
+if (Test-Path (Join-Path $ParentDir "Project\gow3_pc")) {
+    $WorkspaceRoot = $ParentDir
+    $ProjectRoot = Join-Path $WorkspaceRoot "Project"
+} else {
+    $ProjectRoot = $ParentDir
+    $WorkspaceRoot = Split-Path -Parent $ProjectRoot
+}
 $BuildDir = Join-Path $WorkspaceRoot "Build\Windows"
 
 $CodexMsys = Join-Path $env:USERPROFILE ".codex\tmp\uncharted-build\msys64\clang64\bin"
@@ -45,7 +51,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[*] Compilando binarios nativos con optimizacion maxima..." -ForegroundColor Yellow
-ninja -C $BuildDir gow3-probe gow3gpu gow3-gpu-capabilities gow3-play spm-invariants-test frame-generation-test gc_policy-test arena_allocations-test cache_io_queue-test isa-test savedata-test audio-downmix-test
+ninja -C $BuildDir gow3-probe gow3gpu gow3-gpu-capabilities gow3-play dxgi-presenter-test graphics-settings-test perf-overlay-test spm-invariants-test frame-generation-test gc_policy-test arena_allocations-test cache_io_queue-test isa-test savedata-test audio-downmix-test
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[-] FALLO DE COMPILACION: Revisa los errores del compilador arriba." -ForegroundColor Red
     exit 1
@@ -103,23 +109,26 @@ if (Test-Path (Join-Path $BuildDir "gow3-play.exe")) {
 }
 
 if ($RunTests) {
-    Write-Host "[*] Ejecutando suite de verificacion (10,000 Presents, VRAM 1GB/2GB, Invariantes)..." -ForegroundColor Yellow
-    & (Join-Path $BuildDir "spm-invariants-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "frame-generation-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "gc_policy-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "arena_allocations-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "cache_io_queue-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "isa-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "savedata-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-    & (Join-Path $BuildDir "audio-downmix-test.exe")
-    if ($LASTEXITCODE -ne 0) { exit 1 }
+    Write-Host "[*] Ejecutando suite de verificacion (D3D11/D3D12 Zero-Copy Interop, 10,000 Presents, VRAM 1GB/2GB, Invariantes)..." -ForegroundColor Yellow
+    foreach ($TestExe in @(
+        "dxgi-presenter-test.exe",
+        "graphics-settings-test.exe",
+        "perf-overlay-test.exe",
+        "spm-invariants-test.exe",
+        "frame-generation-test.exe",
+        "gc_policy-test.exe",
+        "arena_allocations-test.exe",
+        "cache_io_queue-test.exe",
+        "isa-test.exe",
+        "savedata-test.exe",
+        "audio-downmix-test.exe"
+    )) {
+        & (Join-Path $BuildDir $TestExe)
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[-] TEST FAILED: $TestExe" -ForegroundColor Red
+            exit 1
+        }
+    }
 }
 
 Write-Host "[+] COMPILACION EXITOSA. Binarios y DLLs verificados sin warnings." -ForegroundColor Green

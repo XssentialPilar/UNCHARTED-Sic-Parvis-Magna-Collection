@@ -39,9 +39,10 @@ constexpr int IndexOf(const std::array<T, N>& values, const T& value, int fallba
 inline int ParseDisplayMode(std::string_view text) {
     return IndexOf(DisplayModeKeys, text, Windowed);
 }
-/// A listed limit; unlimited (0) and faster ones (earlier lists had 144-240) are the maximum.
+/// A listed or custom limit in [24, MaxFpsLimit]; unlimited (0) and faster ones clamp to MaxFpsLimit.
 inline int ParseFpsLimit(int value) {
     if (IndexOf(FpsLimits, value, -1) >= 0) return value;
+    if (value >= 24 && value <= MaxFpsLimit) return value;
     return value == 0 || value > MaxFpsLimit ? MaxFpsLimit : 60;
 }
 /// Index into Resolutions; unknown text is native.

@@ -97,11 +97,28 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         return;
     }
     if (key == "fade_distance") {
-        v.fade_distance = std::clamp(i, 100, 400);
+        v.fade_distance = std::clamp(i, 40, 400);
         return;
     }
     if (key == "sun_shadow_distance" || key == "light_shadow_distance") {
-        (key == "sun_shadow_distance" ? v.sun_shadow_distance : v.light_shadow_distance) = std::clamp(i, 100, 300);
+        (key == "sun_shadow_distance" ? v.sun_shadow_distance : v.light_shadow_distance) = std::clamp(i, 35, 300);
+        return;
+    }
+    if (key == "graphics_api") {
+        v.graphics_api = (value == "dx11" || value == "d3d11" || value == "1")   ? 1
+                         : (value == "dx12" || value == "d3d12" || value == "2") ? 2
+                                                                                 : 0;
+        return;
+    }
+    if (key == "vram_budget_mb") {
+        v.vram_budget_mb = i >= 256 ? std::clamp(i, 256, 65536) : 0;
+        return;
+    }
+    if (key == "frame_pacer") {
+        v.frame_pacer_mode = (value == "timer" || value == "sleep") ? 1
+                             : value == "spin"                      ? 2
+                             : (value == "off" || value == "0")     ? 3
+                                                                    : 0;
         return;
     }
     if (key == "menu_shortcut") {
@@ -278,6 +295,11 @@ void Load() {
         {"GOW3_MOUSE_AIM_SENS", "mouse_aim_sens"},    {"GOW3_MOUSE_VERTICAL", "mouse_vertical"},
         {"GOW3_MOUSE_INVERT_X", "mouse_invert_x"},    {"GOW3_VIBRATION", "vibration"},
         {"GOW3_PROMPTS", "prompts"},                  {"GOW3_STICK_SPEED", "stick_speed"},
+        {"GOW3_FPS_LIMIT", "fps_limit"},              {"GOW3_VSYNC", "vsync"},
+        {"GOW3_GRAPHICS_API", "graphics_api"},        {"GOW3_VRAM_BUDGET_MB", "vram_budget_mb"},
+        {"GOW3_FRAME_PACER", "frame_pacer"},          {"GOW3_FADE_DISTANCE", "fade_distance"},
+        {"GOW3_SUN_SHADOW_DISTANCE", "sun_shadow_distance"},
+        {"GOW3_LIGHT_SHADOW_DISTANCE", "light_shadow_distance"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -432,6 +454,11 @@ KeyValues Current() {
     Append(text, "close_shortcut=%d\n", int(v.close_shortcut.load()));
     Append(text, "fade_distance=%d\nsun_shadow_distance=%d\nlight_shadow_distance=%d\n", v.fade_distance.load(),
            v.sun_shadow_distance.load(), v.light_shadow_distance.load());
+    static const char* const api_names[] = {"vulkan", "dx11", "dx12"};
+    static const char* const pacer_names[] = {"hybrid", "timer", "spin", "off"};
+    Append(text, "graphics_api=%s\nvram_budget_mb=%d\nframe_pacer=%s\n",
+           api_names[std::clamp(v.graphics_api.load(), 0, 2)], v.vram_budget_mb.load(),
+           pacer_names[std::clamp(v.frame_pacer_mode.load(), 0, 3)]);
     Append(text, "mouse=%d\nmouse_sens=%.2f\nmouse_invert=%d\nprompts=%s\nstick_speed=%.2f\n",
            int(v.mouse.load()), v.mouse_sens.load(), int(v.mouse_invert.load()), PromptsName(v.prompts),
            v.stick_speed.load());

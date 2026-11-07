@@ -524,3 +524,14 @@ target_include_directories(spm-invariants-test PRIVATE
     ../../vendor/sdl3)
 target_compile_options(spm-invariants-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(spm-invariants-test PRIVATE -pthread)
+
+if (WIN32)
+    add_executable(dxgi-presenter-test EXCLUDE_FROM_ALL
+        ../tests/test_dxgi_presenter.cpp
+        ../tests/test_gpu_runtime_stubs.cpp
+        ../src/compat_win.c)
+    target_compile_definitions(dxgi-presenter-test PRIVATE NDEBUG NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(dxgi-presenter-test PRIVATE shim shadps4 third_party/gcn/include)
+    target_link_libraries(dxgi-presenter-test PRIVATE gow3gpu onecore)
+    target_compile_options(dxgi-presenter-test PRIVATE -fPIC)
+endif()

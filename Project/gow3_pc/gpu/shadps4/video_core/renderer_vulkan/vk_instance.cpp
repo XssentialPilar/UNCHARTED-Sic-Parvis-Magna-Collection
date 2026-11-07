@@ -402,7 +402,7 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    boost::container::static_vector<const char*, 64> enabled_extensions;
+    boost::container::static_vector<const char*, 72> enabled_extensions;
     // gow3 26 Oct 2026 (diagnostics, GitHub #236): GOW3_HIDE_EXTENSIONS=<name>[,<name>...] treats
     // these device extensions as unavailable (a part of the name is enough, e.g.
     // vertex_input_dynamic_state), to run a newer driver with an older driver's feature set.
@@ -599,6 +599,9 @@ bool Instance::CreateDevice() {
     }
     image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME);
     supports_memory_budget = add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+#ifdef _WIN32
+    external_memory_win32 = add_extension("VK_KHR_external_memory_win32");
+#endif
     // gow3: FSR 4 v07 INT8 (vk_temporal_upscaler): quad derivatives in compute shaders.
     compute_shader_derivatives = add_extension(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
     // gow3: FSR 4.1.1 passes (dot2 of halves accumulated in float, as vkd3d-proton translates them).
@@ -1060,17 +1063,28 @@ void Instance::HogVideoMemoryForTests() {
                 static_cast<unsigned long long>(held >> 20));
 }
 
+namespace {
+u64 ConfiguredVramBudgetCapBytes() noexcept {
+    for (const char* var : {"GOW3_VRAM_BUDGET_MB", "GOW3_GC_BUDGET_MB"}) {
+        if (const char* env = std::getenv(var); env && env[0]) {
+            const unsigned long long mb = std::strtoull(env, nullptr, 10);
+            if (mb >= 512 && mb <= 65536) {
+                return static_cast<u64>(mb) << 20;
+            }
+        }
+    }
+    return 0;
+}
+} // namespace
+
 void Instance::CreateAllocator() {
     const VmaVulkanFunctions functions = {
         .vkGetInstanceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
 
-    // gow3 1 Nov 2026 (2 GB cards): a 2 GB card's budget is ~1.7 GB while U2 at 720p used
-    // 2.1 GB, and what did not fit was moved to system RAM (23-31 FPS in the simulation). With
-    // low video memory the reserves kept for speed are smaller: VMA blocks of 64 MiB (not 256,
-    // less unused room per block), the arena chunk reserve (buffer_cache.cpp), the spare image
-    // block (image.cpp) and idle staging buffers (vk_staging_buffer_pool.cpp).
+    // gow3 1 Nov 2026 (2 GB cards) + SPM VRAM Hard Cap: a 1 GB / 2 GB target budget uses smaller
+    // 64 MiB VMA blocks, smaller arena reserves, and tighter staging/image eviction watermarks.
     {
         u64 largest_local = 0;
         for (u32 i = 0; i < memory_properties.memoryHeapCount; ++i) {
@@ -1078,17 +1092,20 @@ void Instance::CreateAllocator() {
                 largest_local = std::max<u64>(largest_local, memory_properties.memoryHeaps[i].size);
             }
         }
-        // 1 Nov 2026 (0.8.0, experimental): only when asked for. GOW3_LOW_VRAM=1: on,
-        // =auto: on discrete cards of 4.5 GiB or less; unset or anything else: off.
+        const u64 budget_cap = ConfiguredVramBudgetCapBytes();
         const char* env = std::getenv("GOW3_LOW_VRAM");
-        low_video_memory = (env && env[0] == '1') ||
-                           (env && std::string_view{env} == "auto" && !IsIntegrated() &&
-                            largest_local <= (u64{4608} << 20));
+        const bool forced_off = env && env[0] == '0';
+        low_video_memory = !forced_off &&
+                           ((env && env[0] == '1') ||
+                            (budget_cap != 0 && budget_cap <= (u64{2560} << 20)) ||
+                            ((!env || std::string_view{env} == "auto") && !IsIntegrated() &&
+                             largest_local <= (u64{3072} << 20)));
         g_low_video_memory = low_video_memory;
         if (low_video_memory) {
-            std::printf("GPU: low video memory mode on (%llu MiB card, experimental): smaller "
-                        "memory reserves (GOW3_LOW_VRAM)\n",
-                        static_cast<unsigned long long>(largest_local >> 20));
+            std::printf("GPU: low video memory mode on (%llu MiB card, cap %llu MiB): smaller "
+                        "memory reserves (64 MiB VMA blocks)\n",
+                        static_cast<unsigned long long>(largest_local >> 20),
+                        static_cast<unsigned long long>(budget_cap >> 20));
         }
     }
     const VmaAllocatorCreateInfo allocator_info = {
@@ -1167,12 +1184,17 @@ void Instance::CollectPhysicalMemoryInfo() {
         // We reserve some memory for the system.
         const u64 system_memory = std::min<u64>(total_memory_budget / 8, 1_GB);
         total_memory_budget -= system_memory;
-        return;
+    } else {
+        // Leave at least 8 GB for the system on integrated GPUs.
+        const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
+        total_memory_budget = static_cast<u64>(
+            std::max<s64>(available_memory - 8_GB, static_cast<s64>(local_memory)));
     }
-    // Leave at least 8 GB for the system on integrated GPUs.
-    const s64 available_memory = static_cast<s64>(total_memory_budget - device_initial_usage);
-    total_memory_budget =
-        static_cast<u64>(std::max<s64>(available_memory - 8_GB, static_cast<s64>(local_memory)));
+    if (const u64 cap = ConfiguredVramBudgetCapBytes(); cap != 0 && total_memory_budget > cap) {
+        total_memory_budget = cap;
+        std::printf("GPU: VRAM hard budget capped at %llu MiB (GOW3_VRAM_BUDGET_MB)\n",
+                    static_cast<unsigned long long>(cap >> 20));
+    }
 }
 
 void Instance::CollectImageFormatInfo() {
@@ -1279,6 +1301,9 @@ void Instance::QueryMemory(u64& usage, u64& budget) const {
     for (const size_t heap : valid_heaps) {
         usage += memory_budget_props.heapUsage[heap];
         budget += memory_budget_props.heapBudget[heap];
+    }
+    if (const u64 cap = ConfiguredVramBudgetCapBytes(); cap != 0 && (budget == 0 || budget > cap)) {
+        budget = cap;
     }
 }
 

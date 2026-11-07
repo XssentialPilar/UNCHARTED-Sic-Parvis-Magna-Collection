@@ -4,9 +4,11 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include "common/types.h"
+#include "gow3_dxgi_presenter.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 #include <vk_mem_alloc.h>
 
@@ -37,8 +39,9 @@ public:
     bool Present();
 
     bool IsHeadless() const { return headless; }
+    bool UsesOffscreenPresent() const { return headless || use_dxgi; }
     vk::ImageLayout FinalLayout() const {
-        return headless ? vk::ImageLayout::eGeneral : vk::ImageLayout::ePresentSrcKHR;
+        return UsesOffscreenPresent() ? vk::ImageLayout::eGeneral : vk::ImageLayout::ePresentSrcKHR;
     }
 
     vk::SurfaceKHR GetSurface() const {
@@ -155,6 +158,10 @@ private:
     u32 frame_index = 0;
     bool needs_recreation = true;
     bool headless = false;
+    bool use_dxgi = false;
+    bool dxgi_initialized_images = false;
+    std::unique_ptr<Gow3Dxgi::PresenterBridge> dxgi_bridge;
+    Gow3Dxgi::FramePacer frame_pacer;
     bool needs_hdr = false;    // The game requested HDR swapchain
     bool supports_hdr = false; // SC supports HDR output
 };

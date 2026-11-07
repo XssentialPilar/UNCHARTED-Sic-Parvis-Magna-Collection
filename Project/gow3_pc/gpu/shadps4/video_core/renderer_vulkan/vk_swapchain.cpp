@@ -12,6 +12,7 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#include "gow3_graphics.h"
 #include "gow3_settings.h"
 #include "gow3_toggles.h"
 #include "imgui/renderer/imgui_core.h"
@@ -32,11 +33,28 @@ Swapchain::Swapchain(const Instance& instance_, const Frontend::WindowSDL& windo
     headless = headless_env && headless_env[0] == '1' && headless_env[1] == '\0';
     if (headless) {
         surface_format = {vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear};
+        Gow3Dxgi::SetActiveApi(Gow3Dxgi::Api::Vulkan);
         std::printf("GPU: GOW3_HEADLESS=1: real offscreen rendering, no WSI surface or visible output\n");
     } else {
-        surface = CreateSurface(instance.GetInstance(), window);
-        FindPresentFormat();
-        FindPresentMode();
+        const auto req_api = Gow3Dxgi::RequestedApi();
+        if (req_api != Gow3Dxgi::Api::Vulkan) {
+            dxgi_bridge = std::make_unique<Gow3Dxgi::PresenterBridge>();
+            if (dxgi_bridge->Initialize(instance, window.GetWindowInfo().render_surface,
+                                        window.GetWidth(), window.GetHeight(), req_api)) {
+                surface_format = {vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear};
+                use_dxgi = true;
+                vsync = Gow3Settings::Get().vsync;
+            } else {
+                dxgi_bridge.reset();
+                use_dxgi = false;
+            }
+        }
+        if (!use_dxgi) {
+            Gow3Dxgi::SetActiveApi(Gow3Dxgi::Api::Vulkan);
+            surface = CreateSurface(instance.GetInstance(), window);
+            FindPresentFormat();
+            FindPresentMode();
+        }
     }
 
     Create(window.GetWidth(), window.GetHeight());
@@ -63,6 +81,32 @@ void Swapchain::Create(u32 width_, u32 height_) {
         extent = {width, height};
         CreateOffscreenImages();
         return;
+    }
+
+    if (use_dxgi && dxgi_bridge) {
+        extent = {std::max(width, 1u), std::max(height, 1u)};
+        image_count = Gow3Dxgi::PresenterBridge::kBufferCount;
+        const bool ok = dxgi_initialized_images
+                            ? dxgi_bridge->Resize(extent.width, extent.height,
+                                                  surface_format.format, images, images_view)
+                            : dxgi_bridge->CreateSharedImages(
+                                  extent.width, extent.height, surface_format.format, images,
+                                  images_view);
+        if (ok) {
+            dxgi_initialized_images = true;
+            return;
+        }
+        std::printf("GPU: DXGI shared image creation failed; falling back to Vulkan WSI\n");
+        dxgi_bridge->ReleaseSharedImages(images, images_view);
+        dxgi_bridge.reset();
+        use_dxgi = false;
+        dxgi_initialized_images = false;
+        Gow3Dxgi::SetActiveApi(Gow3Dxgi::Api::Vulkan);
+        if (!surface) {
+            surface = CreateSurface(instance.GetInstance(), window);
+            FindPresentFormat();
+            FindPresentMode();
+        }
     }
 
     SetSurfaceProperties();
@@ -123,7 +167,7 @@ void Swapchain::Recreate(u32 width_, u32 height_) {
 }
 
 void Swapchain::SetHDR(bool hdr) {
-    if (headless) return; // Diagnostic target is SDR RGBA8.
+    if (headless || use_dxgi) return; // Diagnostic and DXGI RGBA8 flip targets use SDR RGBA8.
     if (needs_hdr == hdr) {
         return;
     }
@@ -141,7 +185,7 @@ void Swapchain::SetHDR(bool hdr) {
 }
 
 bool Swapchain::AcquireNextImage() {
-    if (headless) return true; // Presenter synchronously finishes each offscreen submission.
+    if (headless || use_dxgi) return true; // Presenter finishes offscreen/DXGI shared submission.
     vk::Device device = instance.GetDevice();
     vk::Result result;
     // gow3 1 Nov 2026 (user: Uncharted 1 jerky at 75 FPS on a 75 Hz monitor): the image is
@@ -210,11 +254,32 @@ bool Swapchain::AcquireNextImage() {
 }
 
 bool Swapchain::Present() {
+    const auto& settings = Gow3Settings::Get();
+    const int fps_cap = Gow3Graphics::PresentLimit(settings.fps_limit.load(std::memory_order_relaxed));
+    const auto pacer_mode = static_cast<Gow3Dxgi::PacerMode>(
+        std::clamp(settings.frame_pacer_mode.load(std::memory_order_relaxed), 0, 3));
+    const double display_hz = Gow3DisplayRefreshRate();
+
     if (headless) {
         image_index = (image_index + 1) % image_count;
         frame_index = image_index;
         return true;
     }
+    if (use_dxgi && dxgi_bridge) {
+        bool ok = false;
+        {
+            Gow3Stats::WaitTimer timer{Gow3Stats::present_ns};
+            ok = dxgi_bridge->Present(image_index, settings.vsync.load(std::memory_order_relaxed),
+                                      frame_pacer, fps_cap, display_hz, pacer_mode);
+        }
+        image_index = (image_index + 1) % image_count;
+        frame_index = image_index;
+        if (!ok) {
+            needs_recreation = true;
+        }
+        return !needs_recreation;
+    }
+    frame_pacer.Wait(fps_cap, vsync, display_hz, pacer_mode);
     const vk::PresentInfoKHR present_info = {
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &present_ready[image_index],
@@ -302,6 +367,10 @@ void Swapchain::FindPresentMode() {
 
 void Swapchain::UpdateVsync() {
     if (headless) return;
+    if (use_dxgi) {
+        vsync = Gow3Settings::Get().vsync;
+        return;
+    }
     if (Gow3Settings::Get().vsync == vsync) {
         return;
     }
@@ -390,6 +459,10 @@ void Swapchain::Destroy() {
     if (wait_result != vk::Result::eSuccess) {
         LOG_WARNING(Render_Vulkan, "Failed to wait for device to become idle: {}",
                     vk::to_string(wait_result));
+    }
+
+    if (use_dxgi && dxgi_bridge) {
+        dxgi_bridge->ReleaseSharedImages(images, images_view);
     }
 
     for (auto& image_view : images_view) {

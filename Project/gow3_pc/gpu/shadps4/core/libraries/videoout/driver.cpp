@@ -1047,6 +1047,13 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         if (vsync && refresh > 29.5 && refresh < 120.5 && (limit == 0 || limit + 0.5 >= refresh)) {
             return std::chrono::nanoseconds(s64(1e9 / refresh));
         }
+        // SPM CPU-cool pacing: avoid firing 480 Hz guest vblank interrupts when a 24..120 FPS cap
+        // is active; immediate_flips still presents each finished frame without waiting for vblank,
+        // while a 60..120 Hz harmonic vblank keeps guest audio/physics happy at 75-87.5% lower wakeups.
+        if (limit >= 24 && limit <= 120) {
+            const u32 hz = limit < 60 ? limit * ((60 + limit - 1) / limit) : limit;
+            return std::chrono::nanoseconds(1'000'000'000LL / s64(hz));
+        }
         return base_period;
     };
 

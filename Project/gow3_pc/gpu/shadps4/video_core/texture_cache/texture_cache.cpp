@@ -1846,19 +1846,35 @@ void TextureCache::GarbageCollectImages() {
         // 5 s and re-registered ~200 of them (~225 MB of uploads) in one frame every ~15 s
         // (75-80 ms frames). GOW3_GC_STARTUP_RULE=1: the startup rule on discrete GPUs again.
         static const u64 forced_budget = [] {
-            const char* env = std::getenv("GOW3_GC_BUDGET_MB");
-            return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
+            for (const char* var : {"GOW3_VRAM_BUDGET_MB", "GOW3_GC_BUDGET_MB"}) {
+                if (const char* env = std::getenv(var); env && env[0]) {
+                    const u64 mb = std::strtoull(env, nullptr, 10);
+                    if (mb >= 512) {
+                        return mb << 20;
+                    }
+                }
+            }
+            return u64{0};
         }();
         static const bool startup_rule = [] {
             const char* env = std::getenv("GOW3_GC_STARTUP_RULE");
             return env && env[0] == '1';
         }();
         if (instance.IsIntegrated() || forced_budget || !startup_rule) {
-            const u64 budget = forced_budget ? forced_budget : budget_now;
+            const u64 budget = forced_budget ? std::min(forced_budget, budget_now ? budget_now : forced_budget)
+                                             : budget_now;
             if (budget != 0) {
-                trigger_gc_memory = budget / 10 * 7;
-                pressure_gc_memory = budget / 100 * 85;
-                critical_gc_memory = budget / 100 * 95;
+                if (budget <= (u64{2560} << 20)) {
+                    // Tighter watermarks on 1 GB (820 MB) / 2 GB (1720 MB) budgets so buffer
+                    // arenas + render targets + swapchain never push total resident VRAM over cap.
+                    trigger_gc_memory = budget / 100 * 55;
+                    pressure_gc_memory = budget / 100 * 70;
+                    critical_gc_memory = budget / 100 * 82;
+                } else {
+                    trigger_gc_memory = budget / 10 * 7;
+                    pressure_gc_memory = budget / 100 * 85;
+                    critical_gc_memory = budget / 100 * 95;
+                }
             }
         }
         reading_above_trigger = total_used_memory >= trigger_gc_memory;
