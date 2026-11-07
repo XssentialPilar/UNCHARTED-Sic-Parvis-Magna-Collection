@@ -47,6 +47,14 @@ __pycache__/
 # Scratch and temporary scripts
 scratch/
 
+# Local configuration and runtime artifacts
+launcher.json
+Project/launcher.json
+gow3.ini
+gow3_prompt_assets.bin
+*.bin
+UNCHARTED_KEYBOARD_MOUSE_EN_V4/
+
 # IDE and Editor files
 .vs/
 .vscode/

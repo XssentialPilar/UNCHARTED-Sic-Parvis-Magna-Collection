@@ -80,6 +80,15 @@ if (Test-Path $ProbeExe) {
     Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $DistGow3OutDir "gow3-probe.exe")
     Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $DistGow3OutDir "Uncharted.exe")
 
+    $PromptBin = Join-Path $ProjectRoot "gow3_pc\gpu\shim\gow3_prompt_assets.bin"
+    if (Test-Path $PromptBin) {
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $OutputDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $DistGow3OutDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $Gow3OutDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $BuildDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $WorkspaceRoot "gow3_prompt_assets.bin")
+    }
+
     # Bundle all required MSYS2 clang64 runtime DLLs (SDL3.dll, avcodec-63.dll, avutil-61.dll, swscale-10.dll, etc.)
     $LddCmd = Get-Command ldd.exe -ErrorAction SilentlyContinue
     $ClangBinDir = if (Test-Path $CodexMsys) { $CodexMsys } elseif (Test-Path "C:\msys64\clang64\bin") { "C:\msys64\clang64\bin" } else { $null }

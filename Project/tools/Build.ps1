@@ -86,6 +86,13 @@ $ProbeBuilt = Join-Path $BuildDir "gow3-probe.exe"
 if (Test-Path $ProbeBuilt) {
     Copy-Item -Path $ProbeBuilt -Destination (Join-Path $Gow3OutDir "gow3-probe.exe") -Force
     Copy-Item -Path $ProbeBuilt -Destination (Join-Path $Gow3OutDir "Uncharted.exe") -Force
+
+    $PromptBin = Join-Path $ProjectRoot "gow3_pc\gpu\shim\gow3_prompt_assets.bin"
+    if (Test-Path $PromptBin) {
+        Copy-Item -Path $PromptBin -Destination (Join-Path $Gow3OutDir "gow3_prompt_assets.bin") -Force
+        Copy-Item -Path $PromptBin -Destination (Join-Path $BuildDir "gow3_prompt_assets.bin") -Force
+        Copy-Item -Path $PromptBin -Destination (Join-Path $WorkspaceRoot "gow3_prompt_assets.bin") -Force
+    }
     $LddCmd = Get-Command ldd.exe -ErrorAction SilentlyContinue
     $ClangBinDir = if (Test-Path $CodexMsys) { $CodexMsys } elseif (Test-Path "C:\msys64\clang64\bin") { "C:\msys64\clang64\bin" } else { $null }
     if ($LddCmd -and $ClangBinDir) {

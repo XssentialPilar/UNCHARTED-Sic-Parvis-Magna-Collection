@@ -649,6 +649,23 @@ public:
         return nullptr;
     }
 
+    const PromptAssetEntry* Find1U(const std::string& key_or_label, int theme = 0) const {
+        if (!loaded_ || key_or_label.empty()) return nullptr;
+        std::string canon = Canonicalize(key_or_label);
+        std::string u1 = canon + "_1U";
+        for (const auto& e : entries_) {
+            if (e.theme == theme && std::strcmp(e.id, u1.c_str()) == 0) {
+                return &e;
+            }
+        }
+        for (const auto& e : entries_) {
+            if (std::strcmp(e.id, u1.c_str()) == 0) {
+                return &e;
+            }
+        }
+        return Find(key_or_label, theme);
+    }
+
     const uint8_t* GetData(const PromptAssetEntry& entry) const {
         if (!loaded_) return nullptr;
         if (size_t(data_offset_ + entry.data_offset + entry.data_size) <= bytes_.size()) {
@@ -885,25 +902,19 @@ void DrawBinding(Painter& p, Pass pass, float cx, float cy, float w, float h, co
         DrawPadButton(p, pass, cx, cy, w, h, label);
         return;
     }
-    const auto* asset = PromptAssetBank::Instance().Find(label, 0);
+    const auto* asset = (w / h < 1.35f) ?
+        PromptAssetBank::Instance().Find1U(label, 0) :
+        PromptAssetBank::Instance().Find(label, 0);
+    if (!asset) asset = PromptAssetBank::Instance().Find(label, 0);
     if (asset) {
-        float aspect = asset->uw / asset->uh;
-        if (aspect > 2.5f && w / h < 2.0f) {
-            float kw = h;
-            if (Codepoints(label).size() > 1) {
-                const size_t chars = Codepoints(label).size();
-                kw = std::clamp(Text::Width(label, 0.42f * h, LabelCondense(chars)) + 0.4f * h, h, w);
-            }
-            DrawKey(p, pass, cx, cy, std::min(kw, w), h, label);
-            return;
-        }
         if (pass == Pass::Body) {
             const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
             if (src) {
-                float th = h;
+                float aspect = asset->uw / asset->uh;
+                float th = h * 1.05f;
                 float tw = th * aspect;
-                if (tw > w) {
-                    tw = w;
+                if (tw > w * 1.05f) {
+                    tw = w * 1.05f;
                     th = tw / aspect;
                 }
                 BlitAsset(p.GetCanvas(), *asset, src, cx, cy, tw, th);
@@ -929,14 +940,14 @@ void DrawBinding(Painter& p, Pass pass, float cx, float cy, float w, float h, co
 void DrawCluster(Painter& p, const Cell& c, const std::string& up, const std::string& left,
                  const std::string& down, const std::string& right) {
     const float gap = 1.5f;
-    const float s = std::min((c.w - 2 * Margin - 2 * gap) / 3, (c.h - 2 * Margin - gap) / 2);
+    const float s = std::min((c.w - 2.0f - 2 * gap) / 3, (c.h - 2.0f - gap) / 2);
     const float cx = c.x + c.w / 2.0f, cy = c.y + c.h / 2.0f;
     const float row0 = cy - (s + gap) / 2, row1 = cy + (s + gap) / 2;
     for (const Pass pass : {Pass::Glow, Pass::Body}) {
-        DrawKey(p, pass, cx, row0, s, s, up);
-        DrawKey(p, pass, cx - (s + gap), row1, s, s, left);
-        DrawKey(p, pass, cx, row1, s, s, down);
-        DrawKey(p, pass, cx + (s + gap), row1, s, s, right);
+        DrawBinding(p, pass, cx, row0, s, s, up);
+        DrawBinding(p, pass, cx - (s + gap), row1, s, s, left);
+        DrawBinding(p, pass, cx, row1, s, s, down);
+        DrawBinding(p, pass, cx + (s + gap), row1, s, s, right);
     }
 }
 
@@ -972,7 +983,7 @@ void DrawPlan(Canvas& canvas, const Plan& plan, const Cell& c, const Labels& lab
     }
     Painter p{canvas, cell.x, cell.y, cell.x + cell.w, cell.y + cell.h};
     const float cx = cell.x + cell.w / 2.0f, cy = cell.y + cell.h / 2.0f;
-    const float w = cell.w - 2 * Margin, h = cell.h - 2 * Margin;
+    const float w = cell.w - 2.0f, h = cell.h - 2.0f;
     switch (plan.draw) {
     case Draw::Key:
         for (const Pass pass : {Pass::Glow, Pass::Body}) {
@@ -1266,15 +1277,18 @@ void DrawPictureLabel(Painter& p, const std::string& label, float cx, float cy, 
     if (label.empty()) {
         return;
     }
-    const auto* asset = PromptAssetBank::Instance().Find(label, 0);
+    const auto* asset = (max_width / height < 1.35f) ?
+        PromptAssetBank::Instance().Find1U(label, 0) :
+        PromptAssetBank::Instance().Find(label, 0);
+    if (!asset) asset = PromptAssetBank::Instance().Find(label, 0);
     if (asset) {
         const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
         if (src) {
             float aspect = asset->uw / asset->uh;
-            float th = height * 0.92f;
+            float th = height * 0.96f;
             float tw = th * aspect;
-            if (tw > max_width) {
-                tw = max_width;
+            if (tw > max_width * 0.98f) {
+                tw = max_width * 0.98f;
                 th = tw / aspect;
             }
             BlitAsset(p.GetCanvas(), *asset, src, cx, cy, tw, th);
@@ -1290,9 +1304,9 @@ void DrawPictureLabel(Painter& p, const std::string& label, float cx, float cy, 
     }
     const std::string text_label = label[0] == '#' ? label.substr(1) : label;
     const size_t chars = Codepoints(text_label).size();
-    const float cap = chars == 1 ? 0.62f * height : 0.42f * height;
+    const float cap = chars == 1 ? 0.72f * height : 0.50f * height;
     const Text text{text_label, cx, cy, cap, max_width, LabelCondense(chars)};
-    const float bold = 0.07f * cap;
+    const float bold = 0.08f * cap;
     // The glow ends inside the glyphs' distance fields (they end Text::Pad pixels out).
     const float glow_radius = std::min(0.12f * height, Text::Pad - bold - 1.0f);
     p.Halo([&](float x, float y) { return text.Distance(x, y) - bold; }, glow_radius, 0.45f, color);
@@ -1386,7 +1400,8 @@ void RedrawFace(Picture& pic, const std::string& label, bool controller) {
     const float cover = std::clamp(symbol_reach + 0.04f, 0.8f, 0.92f);
     p.FillShaded([=](float x, float y) { return (unit(x, y) - cover) * r; },
                  [=](float, float y) { return Mix(top, bottom, (y - (cy - cover * ry)) / (2 * cover * ry)); });
-    DrawPictureLabel(p, label, cx, cy, 1.25f * inner, 1.5f * 0.8f * rx, symbol_color);
+    const float face_size = 1.85f * r;
+    DrawPictureLabel(p, label, cx, cy, face_size, face_size, symbol_color);
     FromCanvas(canvas, pic);
 }
 
@@ -1461,8 +1476,8 @@ void RedrawShoulder(Picture& pic, const std::string& label) {
     const Rgb top = Mix(body_color, Rgb{1, 1, 1}, 0.05f), bottom = Mix(body_color, Rgb{0, 0, 0}, 0.15f);
     p.FillShaded([&](float x, float y) { return std::max(RoundBox(x, y, cx, cy, hw, hh, 0.4f * hh), button(x, y)); },
                  [=](float, float y) { return Mix(top, bottom, (y - (cy - hh)) / (2 * hh)); });
-    const float bw = (x1 - x0) * 0.8f, bh = (y1 - y0) * 0.62f;
-    DrawPictureLabel(p, label, (x0 + x1 + 1) / 2.0f, cy, std::min(bh, 2.6f * hh), bw, text_color);
+    const float bw = (x1 - x0) * 0.95f, bh = (y1 - y0) * 0.92f;
+    DrawPictureLabel(p, label, (x0 + x1 + 1) / 2.0f, cy, std::min(bh, 3.2f * hh), bw, text_color);
     FromCanvas(canvas, pic);
 }
 
@@ -1499,7 +1514,7 @@ void RedrawDpad(Picture& pic, const std::string& label) {
     Painter p{canvas, 0, 0, w, h, false};
     const float cx = (x0 + x1 + 1) / 2.0f, cy = (y0 + y1 + 1) / 2.0f;
     const float aw = float(x1 - x0 + 1), ah = float(y1 - y0 + 1);
-    DrawPictureLabel(p, label, cx, cy, 0.62f * std::min(aw, ah), 0.86f * aw, ink_color);
+    DrawPictureLabel(p, label, cx, cy, 0.92f * std::min(aw, ah), 0.95f * aw, ink_color);
     FromCanvas(canvas, pic);
 }
 
@@ -1508,21 +1523,24 @@ void RedrawDpad(Picture& pic, const std::string& label) {
 // and blits the authentic vector keycap (TAB or configured key) preserving physical 1.5U proportions.
 void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool is_map) {
     const int w = pic.w, h = pic.h;
-    if (w < 512 || h < 256) return;
+    if (w < 256 || h < 128) return;
 
-    const float cx = is_map ? 238.5f : 248.0f;
-    const float cy = is_map ? 163.5f : 157.0f;
-    const int bx0 = is_map ? 180 : 192;
-    const int bx1 = is_map ? 298 : 305;
-    const int by0 = 93;
-    const int by1 = is_map ? 235 : 222;
+    const float sx = float(w) / 512.0f;
+    const float sy = float(h) / 256.0f;
 
-    for (int y = by0; y <= by1; ++y) {
-        for (int x = bx0; x <= bx1; ++x) {
+    const float cx = (is_map ? 238.5f : 248.0f) * sx;
+    const float cy = (is_map ? 163.5f : 157.0f) * sy;
+    const int bx0 = int((is_map ? 170.0f : 180.0f) * sx);
+    const int bx1 = int((is_map ? 310.0f : 320.0f) * sx);
+    const int by0 = int(75.0f * sy);
+    const int by1 = int((is_map ? 245.0f : 235.0f) * sy);
+
+    for (int y = std::max(0, by0); y <= std::min(h - 1, by1); ++y) {
+        for (int x = std::max(0, bx0); x <= std::min(w - 1, bx1); ++x) {
             uint8_t* p = &pic.rgba[(y * w + x) * 4];
             float luma = 0.3f * p[0] + 0.59f * p[1] + 0.11f * p[2];
-            if (luma > 75.0f) {
-                p[0] = 52; p[1] = 50; p[2] = 46; p[3] = 255;
+            if (luma > 65.0f || (p[0] > 70 && p[1] > 70 && p[2] > 70)) {
+                p[0] = 48; p[1] = 44; p[2] = 40; p[3] = 255;
             }
         }
     }
@@ -1534,7 +1552,7 @@ void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool
         if (asset) {
             const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
             if (src) {
-                float th = 68.0f;
+                float th = 112.0f * sy;
                 float tw = th * (asset->uw / asset->uh);
                 BlitAssetToPicture(pic, *asset, src, cx, cy, tw, th);
                 return;
@@ -1685,7 +1703,7 @@ std::shared_ptr<const Texels> Replacement(VAddr address, u32 guest_size, u32 mip
                     static_cast<unsigned long long>(hash), known ? ": " : "", known ? known->name : "");
         std::fflush(stdout);
     }
-    if (!known || (picture && tile_mode != 13)) {
+    if (!known) {
         return nullptr;
     }
     if (std::find(state.seen.begin(), state.seen.end(), std::pair{address, guest_size}) == state.seen.end()) {
