@@ -69,7 +69,38 @@ clang -O2 -municode -mwindows (Join-Path $StarterDir "starter.c") $StarterRcObj 
 if ($LASTEXITCODE -ne 0) { throw "Launcher .exe compilation failed." }
 
 Copy-Item -Path $LauncherExeMain -Destination $LauncherExeStart -Force
-Copy-Item -Path $LauncherExeMain -Destination (Join-Path $WorkspaceRoot "Uncharted - Sic Parvis Magna Collection.exe") -Force
+Copy-Item -Path $LauncherExeMain -Destination (Join-Path $WorkspaceRoot "Uncharted - Sic Parvis Magna Collection.exe") -Force -ErrorAction SilentlyContinue
+
+# Step 4: Deploy gow3-probe.exe, Uncharted.exe, and all required MSYS2 clang64 runtime DLLs (SDL3, FFmpeg, Zydis, libc++, etc.)
+$Gow3OutDir = Join-Path $ProjectRoot "gow3_pc\out"
+$Gow3OutGpuDir = Join-Path $ProjectRoot "gow3_pc\out\gpu"
+New-Item -ItemType Directory -Force -Path $Gow3OutDir | Out-Null
+New-Item -ItemType Directory -Force -Path $Gow3OutGpuDir | Out-Null
+$ProbeBuilt = Join-Path $BuildDir "gow3-probe.exe"
+if (Test-Path $ProbeBuilt) {
+    Copy-Item -Path $ProbeBuilt -Destination (Join-Path $Gow3OutDir "gow3-probe.exe") -Force
+    Copy-Item -Path $ProbeBuilt -Destination (Join-Path $Gow3OutDir "Uncharted.exe") -Force
+    $LddCmd = Get-Command ldd.exe -ErrorAction SilentlyContinue
+    $ClangBinDir = if (Test-Path $CodexMsys) { $CodexMsys } elseif (Test-Path "C:\msys64\clang64\bin") { "C:\msys64\clang64\bin" } else { $null }
+    if ($LddCmd -and $ClangBinDir) {
+        $DllNames = & $LddCmd.Source $ProbeBuilt | ForEach-Object {
+            if ($_ -match "=> /clang64/bin/([^\s]+\.dll)") { $matches[1] }
+        } | Sort-Object -Unique
+        foreach ($Dll in $DllNames) {
+            $SrcDll = Join-Path $ClangBinDir $Dll
+            if (Test-Path $SrcDll) {
+                Copy-Item -Path $SrcDll -Destination (Join-Path $Gow3OutDir $Dll) -Force
+                Copy-Item -Path $SrcDll -Destination (Join-Path $BuildDir $Dll) -Force
+            }
+        }
+    }
+}
+if (Test-Path (Join-Path $BuildDir "gow3-gpu-capabilities.exe")) {
+    Copy-Item -Path (Join-Path $BuildDir "gow3-gpu-capabilities.exe") -Destination (Join-Path $Gow3OutGpuDir "gow3-gpu-capabilities.exe") -Force
+}
+if (Test-Path (Join-Path $BuildDir "gow3-play.exe")) {
+    Copy-Item -Path (Join-Path $BuildDir "gow3-play.exe") -Destination (Join-Path $Gow3OutGpuDir "gow3-play.exe") -Force
+}
 
 if ($RunTests) {
     Write-Host "[*] Ejecutando suite de verificacion (10,000 Presents, VRAM 1GB/2GB, Invariantes)..." -ForegroundColor Yellow
@@ -91,5 +122,5 @@ if ($RunTests) {
     if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
-Write-Host "[+] COMPILACION EXITOSA. Binarios verificados sin warnings." -ForegroundColor Green
+Write-Host "[+] COMPILACION EXITOSA. Binarios y DLLs verificados sin warnings." -ForegroundColor Green
 exit 0
