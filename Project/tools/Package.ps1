@@ -44,9 +44,15 @@ function Safe-CopyItem {
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $NetPublishExe = Join-Path $ProjectRoot "launcher_net\publish\Uncharted - Sic Parvis Magna Collection.exe"
+$NetPublishDll = Join-Path $ProjectRoot "launcher_net\publish\launcher_native.dll"
 $MainExe = Join-Path $ProjectRoot "Uncharted - Sic Parvis Magna Collection.exe"
 if (Test-Path $NetPublishExe) {
     Safe-CopyItem -Source $NetPublishExe -Destination $MainExe
+}
+if (Test-Path $NetPublishDll) {
+    Safe-CopyItem -Source $NetPublishDll -Destination (Join-Path $ProjectRoot "launcher_native.dll")
+    Safe-CopyItem -Source $NetPublishDll -Destination (Join-Path $OutputDir "launcher_native.dll")
+    Safe-CopyItem -Source $NetPublishDll -Destination (Join-Path $WorkspaceRoot "launcher_native.dll")
 }
 $StartExe = Join-Path $ProjectRoot "Start Uncharted.exe"
 
