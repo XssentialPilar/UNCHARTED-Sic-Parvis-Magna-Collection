@@ -1,10 +1,54 @@
+# References and external drops
 References/
+
+# Build directories and compiler outputs
+Build/
+build/
+bin/
+obj/
+*.obj
+*.o
+*.a
+*.lib
+*.ninja_deps
+*.ninja_log
+build.ninja
+CMakeCache.txt
+CMakeFiles/
+Testing/
+
+# .NET Launcher build outputs
+Project/launcher_net/bin/
+Project/launcher_net/obj/
+Project/launcher_net/publish/
+
+# Runtime diagnostics and session dumps
+Project/diagnostics/Sessions/*
+!Project/diagnostics/Sessions/.gitkeep
 Diagnostics/Sessions/*
 !Diagnostics/Sessions/.gitkeep
+diagnostics/Sessions/*
+!diagnostics/Sessions/.gitkeep
+
+# Analysis user caches and logs
 analysis/
+Project/analysis/uncharted-user/log/
+Project/analysis/uncharted-user/cache/
+Project/analysis/uncharted-user/captures/
+Project/analysis/uncharted-user/temp/
+Project/analysis/uncharted-user/temp0/
+Distribution/Uncharted/user/
+
+# Python cache
 __pycache__/
 *.pyc
-Distribution/Uncharted/user/
-Build/Windows/cheat-hook-test.exe
-Build/Windows/CMakeFiles/cheat-hook-test.dir/
-Build/Windows/Testing/
+*.pyo
+
+# Scratch and temporary scripts
+scratch/
+
+# IDE and Editor files
+.vs/
+.vscode/
+*.user
+*.suo
