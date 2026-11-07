@@ -232,10 +232,10 @@
                                         <TextBlock Text="DirectX 11 ofrece Flip-Discard por hardware" FontSize="11" Foreground="#888"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ComboApi" Grid.Column="1" SelectionChanged="OnSettingChanged">
-                                        <ComboBoxItem Content="DirectX 11 (Hardware Flip-Discard) ★" Tag="dx11" IsSelected="True"/>
+                                        <ComboBoxItem Content="DirectX 11 (Hardware Flip-Discard)" Tag="dx11"/>
                                         <ComboBoxItem Content="DirectX 12 (Flip-Model)" Tag="dx12"/>
                                         <ComboBoxItem Content="Vulkan (Nativo WSI)" Tag="vulkan"/>
-                                        <ComboBoxItem Content="DirectX 9 (D3D9Ex FlipEx Nativo)" Tag="dx9"/>
+                                        <ComboBoxItem Content="DirectX 9 (D3D9Ex FlipEx Nativo) ★" Tag="dx9" IsSelected="True"/>
                                     </ComboBox>
                                 </Grid>
 
@@ -250,10 +250,10 @@
                                     </StackPanel>
                                     <ComboBox x:Name="ComboVramCap" Grid.Column="1" SelectionChanged="OnSettingChanged">
                                         <ComboBoxItem Content="820 MB (Objetivo 1 GB VRAM)" Tag="820"/>
-                                        <ComboBoxItem Content="1720 MB (Objetivo 2 GB VRAM) ★" Tag="1720" IsSelected="True"/>
+                                        <ComboBoxItem Content="1720 MB (Objetivo 2 GB VRAM)" Tag="1720"/>
                                         <ComboBoxItem Content="3200 MB (Objetivo 4 GB VRAM)" Tag="3200"/>
                                         <ComboBoxItem Content="6144 MB (Objetivo 8 GB+ VRAM)" Tag="6144"/>
-                                        <ComboBoxItem Content="Sin límite (Auto)" Tag="0"/>
+                                        <ComboBoxItem Content="Sin límite (Auto) ★" Tag="0" IsSelected="True"/>
                                     </ComboBox>
                                 </Grid>
 

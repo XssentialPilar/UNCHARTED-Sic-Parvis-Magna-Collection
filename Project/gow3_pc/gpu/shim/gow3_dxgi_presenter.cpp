@@ -72,6 +72,9 @@ Api ParseApi(std::string_view text) noexcept {
     if (norm == "dx12" || norm == "d3d12" || norm == "directx12" || norm == "2") {
         return Api::DirectX12;
     }
+    if (norm == "dx9" || norm == "d3d9" || norm == "directx9" || norm == "3") {
+        return Api::DirectX9;
+    }
     return Api::Vulkan;
 }
 
@@ -81,6 +84,8 @@ const char* ApiConfigName(Api api) noexcept {
         return "dx11";
     case Api::DirectX12:
         return "dx12";
+    case Api::DirectX9:
+        return "dx9";
     default:
         return "vulkan";
     }
@@ -92,6 +97,8 @@ const char* ApiOverlayTag(Api api) noexcept {
         return "D3D11";
     case Api::DirectX12:
         return "D3D12";
+    case Api::DirectX9:
+        return "D3D9";
     default:
         return "VULKAN";
     }
@@ -129,7 +136,7 @@ Api RequestedApi() noexcept {
         return ParseApi(env);
     }
     return static_cast<Api>(
-        std::clamp(Gow3Settings::Get().graphics_api.load(std::memory_order_relaxed), 0, 2));
+        std::clamp(Gow3Settings::Get().graphics_api.load(std::memory_order_relaxed), 0, 3));
 }
 
 Api ActiveApi() noexcept {
@@ -629,6 +636,99 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
         SetActiveApi(Api::DirectX12);
         std::printf("GPU: DirectX 12 hardware flip-discard presenter active (tearing=%d)\n",
                     int(impl->allow_tearing));
+        std::fflush(stdout);
+        return true;
+    }
+
+    if (requested_api == Api::DirectX9) {
+        impl->d3d11_module = LoadLibraryExW(L"d3d11.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!impl->d3d11_module) {
+            std::printf("GPU: d3d11.dll unavailable for D3D9 interop; falling back to Vulkan WSI\n");
+            return false;
+        }
+        const auto create_d3d11 = reinterpret_cast<Impl::D3D11CreateDeviceFn>(
+            GetProcAddress(impl->d3d11_module, "D3D11CreateDevice"));
+        if (!create_d3d11) {
+            return false;
+        }
+        static constexpr D3D_FEATURE_LEVEL levels[] = {
+            D3D_FEATURE_LEVEL_11_1,
+            D3D_FEATURE_LEVEL_11_0,
+        };
+        D3D_FEATURE_LEVEL achieved = D3D_FEATURE_LEVEL_11_0;
+        HRESULT hr = create_d3d11(impl->adapter1.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+                                  D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2, D3D11_SDK_VERSION,
+                                  impl->d3d11_device.GetAddressOf(), &achieved,
+                                  impl->d3d11_context.GetAddressOf());
+        if (FAILED(hr)) {
+            hr = create_d3d11(impl->adapter1.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+                              D3D11_CREATE_DEVICE_BGRA_SUPPORT, &levels[1], 1, D3D11_SDK_VERSION,
+                              impl->d3d11_device.GetAddressOf(), &achieved,
+                              impl->d3d11_context.GetAddressOf());
+        }
+        if (FAILED(hr) || !impl->d3d11_device || !impl->d3d11_context) {
+            std::printf("GPU: D3D11CreateDevice failed for D3D9 interop; falling back to Vulkan WSI\n");
+            return false;
+        }
+
+        impl->d3d9_module = LoadLibraryExW(L"d3d9.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!impl->d3d9_module) {
+            std::printf("GPU: d3d9.dll unavailable; trying DirectX 11 fallback\n");
+            return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+        }
+        using Direct3DCreate9ExFn = HRESULT(WINAPI*)(UINT, IDirect3D9Ex**);
+        const auto create_d3d9ex = reinterpret_cast<Direct3DCreate9ExFn>(
+            GetProcAddress(impl->d3d9_module, "Direct3DCreate9Ex"));
+        if (!create_d3d9ex) {
+            std::printf("GPU: Direct3DCreate9Ex entry point not found in d3d9.dll\n");
+            return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+        }
+        hr = create_d3d9ex(D3D_SDK_VERSION, impl->d3d9ex.ReleaseAndGetAddressOf());
+        if (FAILED(hr) || !impl->d3d9ex) {
+            std::printf("GPU: Direct3DCreate9Ex failed (hr=0x%08lx); trying DirectX 11 fallback\n",
+                        static_cast<unsigned long>(hr));
+            return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+        }
+
+        if (!impl->headless_test) {
+            D3DPRESENT_PARAMETERS d3dpp{};
+            d3dpp.BackBufferWidth = impl->width;
+            d3dpp.BackBufferHeight = impl->height;
+            d3dpp.BackBufferFormat = D3DFMT_A8R8G8B8;
+            d3dpp.BackBufferCount = kBufferCount;
+            d3dpp.MultiSampleType = D3DMULTISAMPLE_NONE;
+            d3dpp.MultiSampleQuality = 0;
+            d3dpp.SwapEffect = D3DSWAPEFFECT_FLIPEX;
+            d3dpp.hDeviceWindow = impl->hwnd;
+            d3dpp.Windowed = TRUE;
+            d3dpp.EnableAutoDepthStencil = FALSE;
+            d3dpp.Flags = 0;
+            d3dpp.FullScreen_RefreshRateInHz = 0;
+            d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+
+            hr = impl->d3d9ex->CreateDeviceEx(
+                D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, impl->hwnd,
+                D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
+                &d3dpp, nullptr, impl->d3d9_device.ReleaseAndGetAddressOf());
+            if (FAILED(hr)) {
+                d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+                hr = impl->d3d9ex->CreateDeviceEx(
+                    D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, impl->hwnd,
+                    D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
+                    &d3dpp, nullptr, impl->d3d9_device.ReleaseAndGetAddressOf());
+            }
+            if (FAILED(hr) || !impl->d3d9_device) {
+                std::printf("GPU: Direct3D 9Ex CreateDeviceEx failed (hr=0x%08lx); trying DirectX 11 fallback\n",
+                            static_cast<unsigned long>(hr));
+                return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+            }
+        }
+
+        active_api = Api::DirectX9;
+        initialized = true;
+        zero_copy_interop = true;
+        SetActiveApi(Api::DirectX9);
+        std::printf("GPU: Direct3D 9Ex hardware FlipEx presenter active\n");
         std::fflush(stdout);
         return true;
     }

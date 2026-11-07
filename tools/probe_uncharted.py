@@ -1566,6 +1566,8 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
         api = "dx12"
     elif raw_api in ("vk", "vulkan"):
         api = "vulkan"
+    elif raw_api in ("d3d9", "dx9", "directx9"):
+        api = "dx9"
     else:
         api = "dx11"
 
