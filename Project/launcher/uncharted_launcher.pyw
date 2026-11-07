@@ -1282,13 +1282,47 @@ def normalize_vram_cap(value, tex_quality="medium"):
     return "0" 
 
 
+def merge_ini_file(path, updates):
+    p = Path(path)
+    lines = []
+    if p.exists():
+        try:
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+    done = set()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if "=" in stripped and not stripped.startswith("#"):
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}")
+                done.add(key)
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+    for key, value in updates.items():
+        if key not in done:
+            new_lines.append(f"{key}={value}")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
 def read_ini(game):
     values = dict(INI_DEFAULTS)
-    for line in ini_lines(game):
-        if "=" in line and not line.lstrip().startswith("#"):
-            key, value = line.split("=", 1)
-            values[key.strip()] = value.strip()
-    values["fps_limit"] = fps_limit_value(values["fps_limit"])
+    candidates = [p for p in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ini_file(game), INI_FILE) if p.exists()]
+    candidates.sort(key=lambda p: p.stat().st_mtime_ns)
+    for p in candidates:
+        try:
+            for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                if "=" in line and not line.lstrip().startswith("#"):
+                    k, v = line.split("=", 1)
+                    values[k.strip()] = v.strip()
+        except OSError:
+            pass
+    values["fps_limit"] = fps_limit_value(values.get("fps_limit", "60"))
     values["graphics_api"] = normalize_graphics_api(values.get("graphics_api"))
     values["frame_pacer"] = normalize_frame_pacer(values.get("frame_pacer"))
     return values
@@ -1302,18 +1336,13 @@ def ini_mtime(game):
 
 
 def write_ini(game, updates):
-    lines = ini_lines(game)
-    done = set()
-    for i, line in enumerate(lines):
-        if "=" in line and not line.lstrip().startswith("#"):
-            key = line.split("=", 1)[0].strip()
-            if key in updates:
-                lines[i] = f"{key}={updates[key]}"
-                done.add(key)
-    lines += [f"{key}={value}" for key, value in updates.items() if key not in done]
-    path = ini_file(game)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    merge_ini_file(ini_file(game), updates)
+    for ep in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ROOT.parent / "EngineConfig.ini", user_dir() / "EngineConfig.ini"):
+        try:
+            if ep.exists():
+                merge_ini_file(ep, updates)
+        except Exception:
+            pass
 
 
 def load_config_file(path):
@@ -1770,16 +1799,9 @@ class Launcher:
         self.ini.update(shared)
         self.ini_seen = ini_mtime(self.config["game"])
 
-        engine_cfg_content = (
-            "# Uncharted Global Engine Configuration (Sic Parvis Magna Collection)\n"
-            f"graphics_api={shared['graphics_api']}\n"
-            f"vram_budget_mb={shared['vram_budget_mb']}\n"
-            f"frame_pacer={shared['frame_pacer']}\n"
-            f"deferred_readback=1\nstale_readback=0\n"
-        )
         for ep in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ROOT.parent / "EngineConfig.ini", user_dir() / "EngineConfig.ini"):
             try:
-                ep.write_text(engine_cfg_content, encoding="utf-8")
+                merge_ini_file(ep, shared)
             except Exception:
                 pass
 
@@ -2177,18 +2199,45 @@ class Launcher:
     def reload_ini(self):
         self.ini = read_ini(self.config["game"])
         self.ini_seen = ini_mtime(self.config["game"])
+        try:
+            mt = (ROOT / "EngineConfig.ini").stat().st_mtime_ns
+            if self.ini_seen is None or mt > self.ini_seen:
+                self.ini_seen = mt
+        except OSError:
+            pass
         if controls_from_ini(self.ini, self.game_settings()):
             write_config(self.config)
+            ctrl_updates = controls_to_ini(self.game_settings())
+            for ep in (ini_file(self.config["game"]), ROOT / "EngineConfig.ini", ROOT / "gow3.ini"):
+                try:
+                    if ep.exists():
+                        merge_ini_file(ep, ctrl_updates)
+                except Exception:
+                    pass
 
     def save_controls(self):
         write_config(self.config)
-        self.save_ini(controls_to_ini(self.game_settings()))
+        ctrl_updates = controls_to_ini(self.game_settings())
+        self.save_ini(ctrl_updates)
+        for ep in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ROOT.parent / "EngineConfig.ini", user_dir() / "EngineConfig.ini"):
+            try:
+                merge_ini_file(ep, ctrl_updates)
+            except Exception:
+                pass
 
     def follow_ini(self):
-        """Only reload probe-<game>.ini when the running game's Insert menu modifies it on disk."""
+        """Only reload configuration when on-disk settings (probe or EngineConfig) are modified."""
         if self.process is None:
             return
-        current_mtime = ini_mtime(self.config["game"])
+        engine_cfg = ROOT / "EngineConfig.ini"
+        current_mtime = None
+        for p in (engine_cfg, ini_file(self.config["game"])):
+            try:
+                mt = p.stat().st_mtime_ns
+                if current_mtime is None or mt > current_mtime:
+                    current_mtime = mt
+            except OSError:
+                pass
         if current_mtime is not None and current_mtime != getattr(self, "ini_seen", None):
             self.reload_ini()
             if "graphics_api" in self.ini:
@@ -3995,6 +4044,8 @@ class Launcher:
             self.root.destroy()
 
     def finished(self, code):
+        self.reload_ini()
+        self.refresh_controls()
         self.process = None
         self.stop_partner()
         reason = self.crash_reason()

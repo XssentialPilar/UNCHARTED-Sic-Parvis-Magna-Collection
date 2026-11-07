@@ -98,7 +98,6 @@ public class LauncherConfig
                 File.WriteAllLines(iniPath, lines);
             }
 
-            string engineConfig = $"# Uncharted Global Engine Configuration (Sic Parvis Magna Collection)\ngraphics_api={GraphicsApi}\nvram_budget_mb={VramBudgetMb}\nframe_pacer={FramePacingMode}\nfps_limit={FpsLimit}\nvsync={VSync}\ntexture_quality={TextureQuality}\nshadow_quality={ShadowQuality}\nssao_quality={SsaoQuality}\nanisotropy={Anisotropy}\nupscaler={Upscaler}\ndeferred_readback=1\nstale_readback=0\n";
             string[] enginePaths = {
                 Path.Combine(workspaceRoot, "Project", "EngineConfig.ini"),
                 Path.Combine(workspaceRoot, "Project", "gow3.ini"),
@@ -107,7 +106,29 @@ public class LauncherConfig
             };
             foreach (var ep in enginePaths)
             {
-                File.WriteAllText(ep, engineConfig);
+                var epLines = File.Exists(ep) ? new List<string>(File.ReadAllLines(ep)) : new List<string>();
+                void SetEpVal(string key, string val)
+                {
+                    int idx = epLines.FindIndex(l => l.Trim().StartsWith(key + "=", StringComparison.OrdinalIgnoreCase));
+                    if (idx >= 0) epLines[idx] = $"{key}={val}";
+                    else epLines.Add($"{key}={val}");
+                }
+                SetEpVal("graphics_api", GraphicsApi);
+                SetEpVal("vram_budget_mb", VramBudgetMb);
+                SetEpVal("frame_pacer", FramePacingMode);
+                SetEpVal("fps_limit", FpsLimit);
+                SetEpVal("vsync", VSync);
+                SetEpVal("texture_quality", TextureQuality);
+                SetEpVal("shadow_quality", ShadowQuality);
+                SetEpVal("ssao_quality", SsaoQuality);
+                SetEpVal("anisotropy", Anisotropy);
+                SetEpVal("upscaler", Upscaler);
+                SetEpVal("deferred_readback", "1");
+                SetEpVal("stale_readback", "0");
+
+                var dir = Path.GetDirectoryName(ep);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllLines(ep, epLines);
             }
         }
         catch { }

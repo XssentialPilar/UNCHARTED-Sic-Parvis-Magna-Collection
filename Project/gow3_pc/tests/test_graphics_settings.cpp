@@ -94,6 +94,50 @@ int main() {
     const std::string cheats = Read(path);
     assert(cheats.find("cheat_double_jumps=1\n") != std::string::npos);
     assert(cheats.find("cheat_very_hard=1\n") != std::string::npos);
+
+    // Verify in-game preferences and controls persistence
+    {
+        v.mouse = true;
+        v.mouse_sens = 2.5f;
+        v.mouse_aim_sens = 1.25f;
+        v.mouse_vertical = 0.85f;
+        v.mouse_invert = true;
+        v.mouse_invert_x = false;
+        v.vibration = false;
+        v.stick_speed = 1.5f;
+        {
+            std::scoped_lock lock{Gow3Settings::ControlsMutex()};
+            v.pad_map = "jump=Cross,fire=R2,aim=L2";
+            v.key_map = "jump=Space,melee=F,reload=R";
+            v.mouse_map = "fire=left,aim=right";
+        }
+        Gow3Settings::Save();
+    }
+    {
+        // Reset in-memory values and load from file to verify persistence
+        v.mouse_sens = 1.0f;
+        v.vibration = true;
+        {
+            std::scoped_lock lock{Gow3Settings::ControlsMutex()};
+            v.pad_map.clear();
+            v.key_map.clear();
+            v.mouse_map.clear();
+        }
+        Gow3Settings::Load();
+        assert(v.mouse && v.mouse_invert && !v.mouse_invert_x);
+        assert(std::abs(v.mouse_sens - 2.5f) < 0.01f);
+        assert(std::abs(v.mouse_aim_sens - 1.25f) < 0.01f);
+        assert(std::abs(v.mouse_vertical - 0.85f) < 0.01f);
+        assert(!v.vibration);
+        assert(std::abs(v.stick_speed - 1.5f) < 0.01f);
+        {
+            std::scoped_lock lock{Gow3Settings::ControlsMutex()};
+            assert(v.pad_map == "jump=Cross,fire=R2,aim=L2");
+            assert(v.key_map == "jump=Space,melee=F,reload=R");
+            assert(v.mouse_map == "fire=left,aim=right");
+        }
+    }
+
     std::remove(path);
-    std::puts("PASS: graphics settings");
+    std::puts("PASS: graphics settings and controls persistence");
 }

@@ -505,14 +505,24 @@ void Save() {
             text += key + "=" + value + "\n";
         }
     }
-    FILE* file = std::fopen(Path(), "w");
+    const char* p = Path();
+    FILE* file = std::fopen(p, "w");
     if (!file) {
-        std::printf("Settings: cannot write %s\n", Path());
+        std::printf("Settings: cannot write %s\n", p);
         return;
     }
     std::fputs(text.c_str(), file);
+    std::fflush(file);
     std::fclose(file);
     synced = ours;
+
+    if (p && std::strcmp(p, "gow3.ini") != 0 && !std::getenv("GOW3_CONFIG")) {
+        if (FILE* f_gow3 = std::fopen("gow3.ini", "w")) {
+            std::fputs(text.c_str(), f_gow3);
+            std::fflush(f_gow3);
+            std::fclose(f_gow3);
+        }
+    }
 }
 
 float PresetScale(int preset) {

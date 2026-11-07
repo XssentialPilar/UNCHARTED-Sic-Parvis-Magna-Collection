@@ -769,6 +769,7 @@ void SaveControlBindings() {
     }
     Gow3Settings::ControlsChanged();
     dirty = true;
+    Gow3Settings::Save();
 }
 
 // A key or mouse button does one thing: it leaves the action that had it (as in the launcher).
@@ -827,6 +828,7 @@ void ResetControls() {
     s.stick_speed = 1.0f;
     Gow3Settings::ControlsChanged();
     dirty = true;
+    Gow3Settings::Save();
     ReloadControls();
     control_note = "Controls reset to the defaults.";
 }
@@ -1155,6 +1157,7 @@ void ControlsTab() {
     if (changed) {
         Gow3Settings::ControlsChanged();
         dirty = true;
+        Gow3Settings::Save();
     }
 
     ImGui::SeparatorText("Buttons");
