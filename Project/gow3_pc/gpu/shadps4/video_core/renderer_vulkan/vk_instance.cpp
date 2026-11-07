@@ -229,6 +229,24 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
         std::printf("GPU %zu: %s (%s)\n", i, props.deviceName.data(),
                     vk::to_string(props.deviceType).c_str());
     }
+
+    // Name-based GPU selection override (GOW3_GPU_NAME or GOW3_GPU)
+    const char* env_name = std::getenv("GOW3_GPU_NAME");
+    if (!env_name || !env_name[0]) env_name = std::getenv("GOW3_GPU");
+    if (env_name && env_name[0]) {
+        for (std::size_t i = 0; i < num_physical_devices; ++i) {
+            const auto props = physical_devices[i].getProperties();
+            const char* dev_name = props.deviceName.data();
+            if (std::strstr(dev_name, env_name) != nullptr ||
+                std::strstr(env_name, dev_name) != nullptr) {
+                physical_device_index = static_cast<s32>(i);
+                std::printf("GPU: explicitly matched '%s' to Vulkan device %zu (%s)\n",
+                            env_name, i, dev_name);
+                break;
+            }
+        }
+    }
+
     // gow3: a saved choice can outlive its GPU (removed card, new driver order).
     if (physical_device_index >= static_cast<s32>(num_physical_devices)) {
         std::printf("GPU: selected GPU %d is not in the device list; choosing automatically\n",

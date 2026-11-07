@@ -1634,6 +1634,12 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     env["UNCHARTED_CONFIG_FILE"] = env["GOW3_CONFIG"]
     env["GOW3_GRAPHICS_API"] = api
     env["GOW3_FRAME_PACER"] = pacer
+    ini_gpu_id = ini_value(settings_file, "gpu_id", "-1")
+    if "GOW3_GPU_ID" not in os.environ and ini_gpu_id and ini_gpu_id != "-1":
+        env["GOW3_GPU_ID"] = ini_gpu_id
+    ini_gpu_name = ini_value(settings_file, "gpu_name", "")
+    if "GOW3_GPU_NAME" not in os.environ and ini_gpu_name:
+        env["GOW3_GPU_NAME"] = ini_gpu_name
     if vram_budget_mb > 0:
         env["GOW3_VRAM_BUDGET_MB"] = str(vram_budget_mb)
         env.setdefault("GOW3_GC_BUDGET_MB", str(vram_budget_mb))

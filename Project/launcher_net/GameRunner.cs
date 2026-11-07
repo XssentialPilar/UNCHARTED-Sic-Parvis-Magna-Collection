@@ -53,6 +53,15 @@ public class GameRunner
         psi.Environment["GOW3_GRAPHICS_API"] = config.GraphicsApi;
         psi.Environment["GOW3_VRAM_BUDGET_MB"] = config.VramBudgetMb;
         psi.Environment["GOW3_FRAME_PACER"] = config.FramePacingMode;
+        if (!string.IsNullOrEmpty(config.GpuId) && config.GpuId != "-1")
+        {
+            psi.Environment["GOW3_GPU_ID"] = config.GpuId;
+        }
+        if (!string.IsNullOrEmpty(config.GpuName))
+        {
+            psi.Environment["GOW3_GPU_NAME"] = config.GpuName;
+            psi.Environment["GOW3_GPU"] = config.GpuName;
+        }
         psi.Environment["GOW3_FPS_LIMIT"] = config.FpsLimit;
         psi.Environment["GOW3_VBLANK_HZ"] = (config.FpsLimit == "60") ? "60" : "0";
         psi.Environment["GOW3_VSYNC"] = config.VSync;

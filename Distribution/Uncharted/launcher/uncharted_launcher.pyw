@@ -279,6 +279,8 @@ INI_DEFAULTS = {
     "overlay_layout": "0",
     "overlay_scale": "100",
     "overlay_opacity": "50",
+    "gpu_id": "-1",
+    "gpu_name": "",
 }
 
 CHEATS = (
@@ -1097,18 +1099,80 @@ def gpu_log_info():
     return None
 
 
-def gpu_names():
-    info = gpu_log_info()
-    if info:
-        return [info["name"]]
+def enumerate_all_gpus():
+    """Enumerate all available physical graphics cards on the system."""
+    gpus = []
+    seen = set()
+
+    # 1. Query gow3-gpu-capabilities.exe (enumerates exact Vulkan devices and physical indices)
+    cap_exe = None
+    for candidate in (
+        ROOT / "Build" / "Windows" / "gow3-gpu-capabilities.exe",
+        ROOT / "Distribution" / "Uncharted" / "gow3-gpu-capabilities.exe",
+        ROOT.parent / "Build" / "Windows" / "gow3-gpu-capabilities.exe",
+        ROOT / "gow3-gpu-capabilities.exe",
+    ):
+        if candidate.is_file():
+            cap_exe = candidate
+            break
+
+    if cap_exe:
+        try:
+            res = subprocess.run([str(cap_exe), "--list"], capture_output=True, text=True, timeout=5, creationflags=NO_WINDOW)
+            for line in res.stdout.splitlines():
+                parts = line.strip().split("\t")
+                if len(parts) >= 2:
+                    idx = int(parts[0]) if parts[0].isdigit() else len(gpus)
+                    name = parts[1].strip()
+                    gpu_type = parts[2].strip() if len(parts) > 2 else ("integrated" if gpu_integrated(name) else "discrete")
+                    if name and name not in seen:
+                        seen.add(name)
+                        gpus.append({"id": idx, "name": name, "type": gpu_type})
+        except Exception:
+            pass
+
+    # 2. Check boot.log for cards logged by the engine
+    if not gpus:
+        logs = [ROOT / "analysis" / g["log"] / "boot.log" for g in GAMES]
+        for log in sorted((l for l in logs if l.exists()), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                with open(log, encoding="utf-8", errors="replace") as lines:
+                    for line in lines:
+                        if line.startswith("GPU ") and ": " in line:
+                            head, _, card = line.partition(": ")
+                            if head[4:].strip().isdigit() and card.rstrip().endswith(")"):
+                                idx = int(head[4:].strip())
+                                model, _, kind = card.rstrip().rpartition(" (")
+                                k = kind[:-1].lower()
+                                gpu_type = "integrated" if "integrated" in k else "discrete"
+                                if model and model not in seen:
+                                    seen.add(model)
+                                    gpus.append({"id": idx, "name": model, "type": gpu_type})
+            except Exception:
+                pass
+            if gpus:
+                break
+
+    # 3. Supplementary enumeration via Windows CIM
     try:
-        result = subprocess.run(
+        res = subprocess.run(
             ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"],
-            capture_output=True, text=True, timeout=15, creationflags=NO_WINDOW,
+            capture_output=True, text=True, timeout=6, creationflags=NO_WINDOW
         )
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    except (OSError, subprocess.SubprocessError):
-        return []
+        for line in res.stdout.splitlines():
+            name = line.strip()
+            if name and name not in seen:
+                seen.add(name)
+                gpu_type = "integrated" if gpu_integrated(name) else "discrete"
+                gpus.append({"id": len(gpus), "name": name, "type": gpu_type})
+    except Exception:
+        pass
+
+    return gpus
+
+
+def gpu_names():
+    return [g["name"] for g in enumerate_all_gpus()]
 
 
 INTEGRATED_AMD = re.compile(
@@ -1681,8 +1745,23 @@ class Launcher:
         self.update_busy = False
         self.update_result = None
 
-        self.gpu_name = self.config.get("gpu")
-        self.recommended = gpu_recommendation(self.gpu_name)
+        self.available_gpus = enumerate_all_gpus()
+        saved_gpu = self.config.get("gpu")
+        matched = next((g for g in self.available_gpus if g["name"] == saved_gpu), None)
+        if matched:
+            self.gpu_name = matched["name"]
+            self.config["gpu_id"] = str(matched["id"])
+            self.recommended = gpu_recommendation(self.gpu_name, matched["type"] == "integrated")
+        elif self.available_gpus:
+            known = [g for g in self.available_gpus if gpu_tier(g["name"])]
+            chosen = max(known, key=lambda g: PRESET_ORDER.index(gpu_tier(g["name"]))) if known else self.available_gpus[0]
+            self.gpu_name = chosen["name"]
+            self.config["gpu"] = chosen["name"]
+            self.config["gpu_id"] = str(chosen["id"])
+            self.recommended = gpu_recommendation(self.gpu_name, chosen["type"] == "integrated")
+        else:
+            self.gpu_name = self.config.get("gpu")
+            self.recommended = gpu_recommendation(self.gpu_name)
         self.fonts()
 
         root.title(APP_TITLE)
@@ -1758,31 +1837,77 @@ class Launcher:
         cy = max(0, (sh - DESK_H - 40) // 2)
         self.root.geometry(f"{DESK_W}x{DESK_H}+{cx}+{cy}")
 
+    def change_selected_gpu(self, name):
+        self.config["gpu"] = name
+        gpu_id = -1
+        gpu_type = None
+        for g in getattr(self, "available_gpus", []):
+            if g["name"] == name:
+                gpu_id = g["id"]
+                gpu_type = g["type"]
+                break
+        self.config["gpu_id"] = str(gpu_id) if gpu_id >= 0 else "-1"
+        self.gpu_name = name
+        is_integrated = (gpu_type == "integrated") if gpu_type else gpu_integrated(name)
+        self.recommended = gpu_recommendation(name, is_integrated)
+        rec = PRESETS.get(self.recommended, {}).get("title", "MED (2 GB)")
+        if hasattr(self, "gpu_banner_label"):
+            self.gpu_banner_label.config(
+                text=f"Active GPU: {self.gpu_name}   •   Recommended Tier: {rec}"
+            )
+        self.draw_expeditions_hud()
+        write_config(self.config)
+        for ep in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ROOT.parent / "EngineConfig.ini", user_dir() / "EngineConfig.ini"):
+            try:
+                merge_ini_file(ep, {"gpu_name": name, "gpu_id": str(gpu_id)})
+            except Exception:
+                pass
+
     def detect_gpu(self):
         found = []
-        threading.Thread(target=lambda: found.append((gpu_log_info(), gpu_names())), daemon=True).start()
+        threading.Thread(target=lambda: found.append(enumerate_all_gpus()), daemon=True).start()
 
         def done():
             if not found:
                 self.root.after(200, done)
                 return
-            info, names = found[0]
-            if not names:
+            gpus = found[0]
+            self.available_gpus = gpus
+            if not gpus:
                 return
-            known = [name for name in names if gpu_tier(name)]
-            name = max(known, key=lambda n: PRESET_ORDER.index(gpu_tier(n))) if known else names[0]
-            integrated = info.get("integrated") if info and info.get("name") == name else None
-            self.gpu_name, self.recommended = name, gpu_recommendation(name, integrated)
-            if self.config.get("gpu") != name:
+
+            saved_gpu = self.config.get("gpu")
+            matched = next((g for g in gpus if g["name"] == saved_gpu), None)
+            if not matched:
+                known = [g for g in gpus if gpu_tier(g["name"])]
+                chosen = max(known, key=lambda g: PRESET_ORDER.index(gpu_tier(g["name"]))) if known else gpus[0]
+                name = chosen["name"]
+                gpu_id = chosen["id"]
+                is_integrated = (chosen["type"] == "integrated")
                 self.config["gpu"] = name
-                write_config(self.config)
+                self.config["gpu_id"] = str(gpu_id)
+            else:
+                name = matched["name"]
+                gpu_id = matched["id"]
+                is_integrated = (matched["type"] == "integrated")
+                self.config["gpu_id"] = str(gpu_id)
+
+            self.gpu_name, self.recommended = name, gpu_recommendation(name, is_integrated)
+            write_config(self.config)
+
+            if "active_gpu" in self.widgets:
+                w = self.widgets["active_gpu"]
+                if hasattr(w, "options"):
+                    w.options = [(g["name"], f"{g['name']} ({g['type'].capitalize()})") for g in gpus]
+                    w.set(name)
+
             self.draw_expeditions_hud()
             if hasattr(self, "gpu_banner_label"):
                 rec = PRESETS.get(self.recommended, {}).get("title", "MED (2 GB)")
                 self.gpu_banner_label.config(
-                    text=f"Detected GPU: {self.gpu_name}   •   Recommended Tier: {rec}"
+                    text=f"Active GPU: {self.gpu_name}   •   Recommended Tier: {rec}"
                 )
-        self.root.after(200, done)
+        self.root.after(100, done)
 
     def sync_global_to_all_inis(self):
         shared = {
@@ -2365,6 +2490,26 @@ class Launcher:
         self.gpu_banner_label.pack(side="top", fill="x", padx=8)
 
         self.section_divider(page, "HARDWARE PRESET & PRESENTATION API")
+
+        def gpu_choice_factory(parent):
+            gpu_opts = []
+            if getattr(self, "available_gpus", None):
+                for g in self.available_gpus:
+                    label = f"{g['name']} ({g['type'].capitalize()})"
+                    gpu_opts.append((g["name"], label))
+            if not gpu_opts:
+                cur = self.config.get("gpu") or self.gpu_name or "Auto (Default GPU)"
+                gpu_opts = [(cur, cur)]
+            cur_val = self.config.get("gpu") or self.gpu_name or gpu_opts[0][0]
+            if cur_val not in [opt[0] for opt in gpu_opts]:
+                cur_val = gpu_opts[0][0]
+            return Dropdown(parent, gpu_opts, cur_val, self.change_selected_gpu, self.f_small)
+
+        self.widgets["active_gpu"] = self.row(
+            page, "Active Graphics Card / GPU",
+            "Select which GPU renders the game (e.g. dedicated NVIDIA RTX vs integrated AMD/Intel CPU graphics).",
+            gpu_choice_factory,
+        )
 
         def preset_factory(parent):
             opts = [(k, PRESETS[k]["chip"]) for k in PRESET_ORDER] + [("custom", "Custom")]
@@ -3745,6 +3890,12 @@ class Launcher:
         env["GOW3_GRAPHICS_API"] = api
         env["GOW3_VRAM_BUDGET_MB"] = vram_cap
         env["GOW3_FRAME_PACER"] = pacer
+        gpu_id_val = self.config.get("gpu_id", "-1")
+        if gpu_id_val and str(gpu_id_val) != "-1":
+            env["GOW3_GPU_ID"] = str(gpu_id_val)
+        if self.config.get("gpu"):
+            env["GOW3_GPU_NAME"] = str(self.config["gpu"])
+            env["GOW3_GPU"] = str(self.config["gpu"])
         fps_lim = str(game_ini.get("fps_limit", "60"))
         env["GOW3_FPS_LIMIT"] = fps_lim
         env["GOW3_VBLANK_HZ"] = "60" if fps_lim == "60" else "0"

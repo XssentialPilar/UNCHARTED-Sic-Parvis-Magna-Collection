@@ -27,6 +27,8 @@ public class LauncherConfig
     public bool DepthOfField { get; set; } = false;
     public bool Diagnostics { get; set; } = false;
     public double MouseSensitivity { get; set; } = 3.0;
+    public string GpuName { get; set; } = "";
+    public string GpuId { get; set; } = "-1";
 
     private static string ConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -125,6 +127,8 @@ public class LauncherConfig
                 SetEpVal("upscaler", Upscaler);
                 SetEpVal("deferred_readback", "1");
                 SetEpVal("stale_readback", "0");
+                if (!string.IsNullOrEmpty(GpuName)) SetEpVal("gpu_name", GpuName);
+                if (!string.IsNullOrEmpty(GpuId)) SetEpVal("gpu_id", GpuId);
 
                 var dir = Path.GetDirectoryName(ep);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);

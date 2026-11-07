@@ -9,6 +9,8 @@
 #endif
 #include <windows.h>
 #include <d3d9.h>
+#include <cstdlib>
+#include <cstring>
 #endif
 
 namespace unc::graphics {
@@ -83,16 +85,36 @@ public:
                         d3dpp.Windowed = TRUE;
                         d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
 
+                        UINT adapter_idx = D3DADAPTER_DEFAULT;
+                        if (const char* env_id = std::getenv("GOW3_GPU_ID")) {
+                            int idx = std::atoi(env_id);
+                            if (idx >= 0 && static_cast<UINT>(idx) < d3d9_ex_->GetAdapterCount()) {
+                                adapter_idx = static_cast<UINT>(idx);
+                            }
+                        }
+                        if (const char* env_name = std::getenv("GOW3_GPU_NAME"); env_name && env_name[0]) {
+                            for (UINT i = 0; i < d3d9_ex_->GetAdapterCount(); ++i) {
+                                D3DADAPTER_IDENTIFIER9 ident{};
+                                if (SUCCEEDED(d3d9_ex_->GetAdapterIdentifier(i, 0, &ident))) {
+                                    if (std::strstr(ident.Description, env_name) != nullptr ||
+                                        std::strstr(env_name, ident.Description) != nullptr) {
+                                        adapter_idx = i;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
                         IDirect3DDevice9Ex* pDev = nullptr;
                         HRESULT hr = d3d9_ex_->CreateDeviceEx(
-                            D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd_,
+                            adapter_idx, D3DDEVTYPE_HAL, hwnd_,
                             D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                             &d3dpp, nullptr, &pDev);
                         if (FAILED(hr)) {
                             d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
                             d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
                             hr = d3d9_ex_->CreateDeviceEx(
-                                D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd_,
+                                adapter_idx, D3DDEVTYPE_HAL, hwnd_,
                                 D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                                 &d3dpp, nullptr, &pDev);
                         }
