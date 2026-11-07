@@ -1,0 +1,1311 @@
+// SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "video_core/amdgpu/pm4_cmds.h"
+#include <cstring>
+#include <functional>
+#include "video_core/renderer_vulkan/vk_draw_pipe.h"
+#include <algorithm>
+#include <cmath>
+#include <vector>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#endif
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
+#include "common/assert.h"
+#include "gow3_toggles.h"
+#include "gow3_settings.h"
+#include "gow3_graphics.h"
+#include "video_core/renderer_vulkan/vk_frame_capture.h"
+#include "common/debug.h"
+#include "common/thread.h"
+#include "core/debug_state.h"
+#include "core/emulator_settings.h"
+#include "core/libraries/kernel/time.h"
+#include "core/libraries/videoout/driver.h"
+#include "gow3_profiler.h"
+#include "core/libraries/videoout/videoout_error.h"
+#include "imgui/renderer/imgui_core.h"
+#include "video_core/amdgpu/liverpool.h"
+#include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/renderer_vulkan/vk_rasterizer.h"
+#include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_wait_diagnostics.h"
+
+extern std::unique_ptr<Vulkan::Presenter> presenter;
+extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
+
+namespace Vulkan {
+extern std::atomic<u64> g_gow3_compile_ns;
+extern std::atomic<u32> g_gow3_compiles;
+extern std::atomic<u64> g_gow3_compile_kind_ns[6];
+extern std::atomic<u32> g_gow3_compile_kind_count[6];
+extern std::atomic<u64> g_gow3_capture_ns, g_gow3_async_ns, g_gow3_compile_wait_ns;
+extern std::atomic<u64> g_gow3_snapshot_ns, g_gow3_guest_wait_ns;
+extern std::atomic<u32> g_gow3_pending_draws;
+} // namespace Vulkan
+
+namespace Libraries::VideoOut {
+
+constexpr static bool Is32BppPixelFormat(PixelFormat format) {
+    switch (format) {
+    case PixelFormat::A8R8G8B8Srgb:
+    case PixelFormat::A8B8G8R8Srgb:
+    case PixelFormat::A2R10G10B10:
+    case PixelFormat::A2R10G10B10Srgb:
+    case PixelFormat::A2R10G10B10Bt2020Pq:
+        return true;
+    default:
+        return false;
+    }
+}
+
+constexpr u32 PixelFormatBpp(PixelFormat pixel_format) {
+    switch (pixel_format) {
+    case PixelFormat::A16R16G16B16Float:
+        return 8;
+    default:
+        return 4;
+    }
+}
+
+#if defined(_WIN32) && !defined(CREATE_WAITABLE_TIMER_HIGH_RESOLUTION)
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+
+// gow3 20 Oct 2026 (idle CPU): the vblank thread waited for flips with
+// condition_variable::wait_until, which libc++ on Windows rounds down to whole milliseconds: in
+// the last millisecond of every tick the timeout became 0 and the thread spun (the mutex taken
+// on each pass), and std::this_thread::sleep_until rounds up to whole milliseconds (up to ~1 ms
+// late for the flip slots). It now sleeps on a high-resolution waitable timer (Windows 10
+// 1803+) and an event set with each queued flip, in one WaitForMultipleObjects. Without a
+// high-resolution timer it keeps the old waits: a plain waitable timer wakes only on the
+// system's timer tick (1-15.6 ms), which would delay vblanks and flips. GOW3_HR_VBLANK=0: the
+// old waits.
+VideoOutDriver::WaitHandles::WaitHandles() {
+#ifdef _WIN32
+    const char* env = std::getenv("GOW3_HR_VBLANK");
+    if (env && env[0] == '0') {
+        std::printf("VideoOut: vblank waits: condition variable and sleep_until "
+                    "(GOW3_HR_VBLANK=0)\n");
+        return;
+    }
+    timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                   TIMER_ALL_ACCESS);
+    if (timer) {
+        request_event = CreateEventW(nullptr, FALSE, FALSE, nullptr); // auto-reset
+        if (!request_event) {
+            CloseHandle(timer);
+            timer = nullptr;
+        }
+    }
+    std::printf("VideoOut: vblank waits: %s\n",
+                timer ? "high-resolution timer and flip event (GOW3_HR_VBLANK=0: old waits)"
+                      : "condition variable and sleep_until (no high-resolution timer)");
+#endif
+}
+
+VideoOutDriver::WaitHandles::~WaitHandles() {
+#ifdef _WIN32
+    if (request_event) {
+        CloseHandle(request_event);
+    }
+    if (timer) {
+        CloseHandle(timer);
+    }
+#endif
+}
+
+VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
+    main_port.resolution.full_width = width;
+    main_port.resolution.full_height = height;
+    main_port.resolution.pane_width = width;
+    main_port.resolution.pane_height = height;
+    const char* separate = std::getenv("GOW3_PRESENT_THREAD");
+    separate_swap = !(separate && separate[0] == '0');
+    if (separate_swap) {
+        swap_thread = std::jthread([&](std::stop_token token) { SwapThread(token); });
+    }
+    present_thread = std::jthread([&](std::stop_token token) { PresentThread(token); });
+}
+
+void VideoOutDriver::RunPresenter(std::function<void()> work, bool if_idle) {
+    if (!separate_swap) {
+        work();
+        return;
+    }
+    {
+        std::scoped_lock lock{swap_mutex};
+        if (if_idle && (swap_busy || !swap_queue.empty())) {
+            return; // a redraw of the last frame is pointless while frames are queued
+        }
+        swap_queue.push_back(std::move(work));
+    }
+    swap_cv.notify_one();
+}
+
+void VideoOutDriver::SwapThread(std::stop_token token) {
+    Common::SetCurrentThreadName("gow3:Present");
+    while (true) {
+        std::function<void()> work;
+        {
+            std::unique_lock lock{swap_mutex};
+            swap_busy = false;
+            if (!swap_cv.wait(lock, token, [this] { return !swap_queue.empty(); })) {
+                return;
+            }
+            work = std::move(swap_queue.front());
+            swap_queue.pop_front();
+            swap_busy = true;
+        }
+        work();
+    }
+}
+
+VideoOutDriver::~VideoOutDriver() = default;
+
+int VideoOutDriver::Open(const ServiceThreadParams* params) {
+    if (main_port.is_open) {
+        return ORBIS_VIDEO_OUT_ERROR_RESOURCE_BUSY;
+    }
+    main_port.is_open = true;
+    liverpool->SetVoPort(&main_port);
+    return 1;
+}
+
+void VideoOutDriver::Close(s32 handle) {
+    std::scoped_lock lock{mutex};
+
+    // Mark as closed
+    main_port.is_open = false;
+    main_port.flip_rate = 0;
+    main_port.prev_index = -1;
+
+    // Clear port information
+    std::memset(main_port.buffer_labels.data(), 0, sizeof(main_port.buffer_labels));
+    std::memset(main_port.groups.data(), 0, sizeof(main_port.groups));
+    std::memset(&main_port.vblank_status, 0, sizeof(main_port.vblank_status));
+    main_port.flip_status = FlipStatus{};
+
+    // Re-initialize buffers
+    std::memset(main_port.buffer_slots.data(), 0, sizeof(main_port.buffer_slots));
+    for (auto& buffer : main_port.buffer_slots) {
+        buffer.group_index = -1;
+    }
+
+    // Clear events
+    for (auto event : main_port.flip_events) {
+        auto equeue = Kernel::GetEqueue(event);
+        if (equeue != nullptr) {
+            equeue->RemoveEvent(static_cast<u64>(OrbisVideoOutInternalEventId::Flip),
+                                Kernel::OrbisKernelEvent::Filter::VideoOut);
+        }
+    }
+    main_port.flip_events.clear();
+    for (auto event : main_port.vblank_events) {
+        auto equeue = Kernel::GetEqueue(event);
+        if (equeue != nullptr) {
+            equeue->RemoveEvent(static_cast<u64>(OrbisVideoOutInternalEventId::Vblank),
+                                Kernel::OrbisKernelEvent::Filter::VideoOut);
+        }
+    }
+    main_port.vblank_events.clear();
+}
+
+VideoOutPort* VideoOutDriver::GetPort(int handle) {
+    if (handle != 1) [[unlikely]] {
+        return nullptr;
+    }
+    return &main_port;
+}
+
+int VideoOutDriver::RegisterBuffers(VideoOutPort* port, s32 startIndex, void* const* addresses,
+                                    s32 bufferNum, const BufferAttribute* attribute) {
+    const s32 group_index = port->FindFreeGroup();
+    if (group_index >= MaxDisplayBufferGroups) {
+        return ORBIS_VIDEO_OUT_ERROR_NO_EMPTY_SLOT;
+    }
+
+    if (startIndex + bufferNum > MaxDisplayBuffers || startIndex > MaxDisplayBuffers ||
+        bufferNum > MaxDisplayBuffers) {
+        LOG_ERROR(Lib_VideoOut,
+                  "Attempted to register too many buffers startIndex = {}, bufferNum = {}",
+                  startIndex, bufferNum);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
+    }
+
+    const s32 end_index = startIndex + bufferNum;
+    if (bufferNum > 0 &&
+        std::any_of(port->buffer_slots.begin() + startIndex, port->buffer_slots.begin() + end_index,
+                    [](auto& buffer) { return buffer.group_index != -1; })) {
+        return ORBIS_VIDEO_OUT_ERROR_SLOT_OCCUPIED;
+    }
+
+    if (attribute->reserved0 != 0 || attribute->reserved1 != 0) {
+        LOG_ERROR(Lib_VideoOut, "Invalid reserved members");
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
+    }
+    if (attribute->aspect_ratio != 0) {
+        LOG_ERROR(Lib_VideoOut, "Invalid aspect ratio = {}", attribute->aspect_ratio);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_ASPECT_RATIO;
+    }
+    if (attribute->width > attribute->pitch_in_pixel) {
+        LOG_ERROR(Lib_VideoOut, "Buffer width {} is larger than pitch {}", attribute->width,
+                  attribute->pitch_in_pixel);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_PITCH;
+    }
+    if (attribute->tiling_mode < TilingMode::Tile || attribute->tiling_mode > TilingMode::Linear) {
+        LOG_ERROR(Lib_VideoOut, "Invalid tilingMode = {}",
+                  static_cast<u32>(attribute->tiling_mode));
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_TILING_MODE;
+    }
+
+    LOG_INFO(Lib_VideoOut,
+             "startIndex = {}, bufferNum = {}, pixelFormat = {}, aspectRatio = {}, "
+             "tilingMode = {}, width = {}, height = {}, pitchInPixel = {}, option = {:#x}",
+             startIndex, bufferNum, GetPixelFormatString(attribute->pixel_format),
+             attribute->aspect_ratio, static_cast<u32>(attribute->tiling_mode), attribute->width,
+             attribute->height, attribute->pitch_in_pixel, attribute->option);
+
+    auto& group = port->groups[group_index];
+    std::memcpy(&group.attrib, attribute, sizeof(BufferAttribute));
+    group.is_occupied = true;
+
+    for (u32 i = 0; i < bufferNum; i++) {
+        const uintptr_t address = reinterpret_cast<uintptr_t>(addresses[i]);
+        port->buffer_slots[startIndex + i] = VideoOutBuffer{
+            .group_index = group_index,
+            .address_left = address,
+            .address_right = 0,
+        };
+        Vulkan::FrameCapture::AddDisplayBuffer(address);
+
+        // Reset flip label also when registering buffer
+        port->buffer_labels[startIndex + i] = 0;
+        port->SignalVoLabel();
+
+        presenter->RegisterVideoOutSurface(group, address);
+        LOG_INFO(Lib_VideoOut, "buffers[{}] = {:#x}", i + startIndex, address);
+    }
+
+    return group_index;
+}
+
+int VideoOutDriver::UnregisterBuffers(VideoOutPort* port, s32 attributeIndex) {
+    if (attributeIndex >= MaxDisplayBufferGroups || !port->groups[attributeIndex].is_occupied) {
+        LOG_ERROR(Lib_VideoOut, "Invalid attribute index {}", attributeIndex);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
+    }
+
+    auto& group = port->groups[attributeIndex];
+    group.is_occupied = false;
+
+    for (auto& buffer : port->buffer_slots) {
+        if (buffer.group_index != attributeIndex) {
+            continue;
+        }
+        buffer.group_index = -1;
+    }
+
+    return ORBIS_OK;
+}
+
+int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex,
+                                          const BufferAttribute* attribute) {
+    if (attributeIndex >= MaxDisplayBufferGroups || !port->groups[attributeIndex].is_occupied) {
+        LOG_ERROR(Lib_VideoOut, "Invalid attribute index {}", attributeIndex);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
+    }
+
+    if (attribute->reserved0 != 0 || attribute->reserved1 != 0) {
+        LOG_ERROR(Lib_VideoOut, "Invalid reserved members");
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
+    }
+    if (attribute->aspect_ratio != 0) {
+        LOG_ERROR(Lib_VideoOut, "Invalid aspect ratio = {}", attribute->aspect_ratio);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_ASPECT_RATIO;
+    }
+    if (attribute->width > attribute->pitch_in_pixel) {
+        LOG_ERROR(Lib_VideoOut, "Buffer width {} is larger than pitch {}", attribute->width,
+                  attribute->pitch_in_pixel);
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_PITCH;
+    }
+    if (attribute->tiling_mode < TilingMode::Tile || attribute->tiling_mode > TilingMode::Linear) {
+        LOG_ERROR(Lib_VideoOut, "Invalid tilingMode = {}",
+                  static_cast<u32>(attribute->tiling_mode));
+        return ORBIS_VIDEO_OUT_ERROR_INVALID_TILING_MODE;
+    }
+
+    LOG_INFO(Lib_VideoOut,
+             "attributeIndex = {}, pixelFormat = {}, aspectRatio = {}, "
+             "tilingMode = {}, width = {}, height = {}, pitchInPixel = {}, option = {:#x}",
+             attributeIndex, GetPixelFormatString(attribute->pixel_format), attribute->aspect_ratio,
+             static_cast<u32>(attribute->tiling_mode), attribute->width, attribute->height,
+             attribute->pitch_in_pixel, attribute->option);
+
+    std::unique_lock lock{port->port_mutex};
+    std::memcpy(&port->groups[attributeIndex].attrib, attribute, sizeof(BufferAttribute));
+    return 0;
+}
+
+// gow3: GOW3_FRAME_LOG=<file>: one line per event, "<kind> <ms since start> <ms since the last
+// of that kind> <steady clock us>": kind S = the guest submitted a flip (its frame is recorded),
+// P = the flip was presented (our pacing), V = a vblank event for the guest, E = a GPU
+// end-of-pipe interrupt delivered to the guest (gnmdriver). For frame pacing
+// analysis (1% lows); the last column lines events up with other traces (same clock as
+// CLOCK_MONOTONIC there).
+void LogFrameEvent(char kind) {
+    static FILE* file = [] {
+        const char* path = std::getenv("GOW3_FRAME_LOG");
+        return path && path[0] ? std::fopen(path, "w") : nullptr;
+    }();
+    if (!file) {
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    static const Clock::time_point start = Clock::now();
+    static std::mutex mutex;
+    static Clock::time_point last[4] = {start, start, start, start};
+    const auto now = Clock::now();
+    std::scoped_lock lock{mutex};
+    auto& previous = last[kind == 'P' ? 1 : kind == 'V' ? 2 : kind == 'E' ? 3 : 0];
+    std::fprintf(file, "%c %.3f %.3f %lld\n", kind,
+                 std::chrono::duration<double, std::milli>(now - start).count(),
+                 std::chrono::duration<double, std::milli>(now - previous).count(),
+                 static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                            now.time_since_epoch())
+                                            .count()));
+    previous = now;
+    static u32 lines = 0;
+    if (++lines % 256 == 0) {
+        std::fflush(file);
+    }
+}
+
+void VideoOutDriver::Flip(const Request& req) {
+    LogFrameEvent('P');
+    // gow3 26 Oct 2026 (GitHub #236): the frame's GPU work, read before the present can recycle
+    // the frame (see the wait before the flip status below).
+    const vk::Semaphore flip_ready_semaphore = req.frame ? req.frame->ready_semaphore : vk::Semaphore{};
+    const u64 flip_ready_tick = req.frame ? req.frame->ready_tick : 0;
+    // Update HDR status before presenting, then present the frame (gow3: on the swap thread).
+    RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
+        presenter->SetHDR(hdr);
+        presenter->Present(frame);
+    });
+    Vulkan::FrameCapture::OnFlip(req.index >= 0 ? req.port->buffer_slots[req.index].address_left
+                                                : 0);
+
+    // gow3: GOW3_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
+    static const bool frame_stats = EmulatorSettingsImpl::Flag("GOW3_FRAME_STATS", false);
+    if (frame_stats) {
+        using Clock = std::chrono::steady_clock;
+        static Clock::time_point window_start = Clock::now(), last = window_start;
+        static u32 frames;
+        static double worst_ms;
+        const auto now = Clock::now();
+        const double frame_ms = std::chrono::duration<double, std::milli>(now - last).count();
+        worst_ms = std::max(worst_ms, frame_ms);
+        static std::vector<double> intervals;
+        intervals.push_back(frame_ms);
+        last = now;
+        // Stall diagnostics: what happened during a long frame.
+        static u64 last_gpu_ns, last_images, last_image_bytes, last_buffer_bytes;
+        static u64 last_t[6], last_minflt, last_sigf, last_pc, last_pp, last_rc, last_rp;
+        const u64 pc = Gow3Stats::protect_calls.load(), pp = Gow3Stats::protect_pages.load(),
+                  rc = Gow3Stats::protect_revoke_calls.load(), rp = Gow3Stats::protect_revoke_pages.load();
+        const u64 minflt = Gow3Stats::gpu_minor_faults.load(), sigf = Gow3Stats::gpu_signal_faults.load();
+        static u64 last_copy_cpu, last_copy_sys, last_copy_flt;
+        const u64 copy_cpu = Gow3Stats::t_copy_cpu.load(), copy_sys = Gow3Stats::copy_sys_us.load(),
+                  copy_flt = Gow3Stats::copy_minflt.load();
+        static u64 last_proc_flt, last_copy_ns, last_copy_bytes, last_rf, last_trf, last_twf;
+        const u64 rf = Gow3Stats::read_faults.load(), trf = Gow3Stats::t_read_faults.load(),
+                  twf = Gow3Stats::t_write_faults.load();
+        // gow3: every frame over 40 ms after the first, at most 10 per 5 s window.
+        static bool primed = false;
+        static u32 stalls_shown = 0;
+        const bool stall = primed && frame_ms > 40.0 && stalls_shown < 10;
+        stalls_shown += stall;
+        primed = true;
+        // Waits and work inside the long frame (window counters are reset every 5 s, so the
+        // previous values are reset with them).
+        static u64 last_wait[7];
+        const u64 wait_now[7] = {Gow3Stats::t_readback_wait.load(), Gow3Stats::tick_wait_ns.load(),
+                                 Gow3Stats::sync_recording_ns.load(), Gow3Stats::host_copies_wait_ns.load(),
+                                 u64(Vulkan::g_gow3_compile_ns.load()), u64(Vulkan::g_gow3_compiles.load()),
+                                 Gow3Stats::t_gc.load()};
+        if (stall) {
+            Gow3Profiler::NoteStall(frame_ms);
+            std::printf("Stall: %.1f ms frame; waits: readback %.1f ms, GPU ticks %.1f ms, "
+                        "recorder %.1f ms, host copies %.1f ms; %llu compiles %.1f ms; GC %.1f ms\n",
+                        frame_ms, (wait_now[0] - last_wait[0]) / 1e6, (wait_now[1] - last_wait[1]) / 1e6,
+                        (wait_now[2] - last_wait[2]) / 1e6, (wait_now[3] - last_wait[3]) / 1e6,
+                        static_cast<unsigned long long>(wait_now[5] - last_wait[5]),
+                        (wait_now[4] - last_wait[4]) / 1e6, (wait_now[6] - last_wait[6]) / 1e6);
+        }
+        std::copy(std::begin(wait_now), std::end(wait_now), std::begin(last_wait));
+        // Its compiles by kind (where the time of a compile burst goes).
+        static u64 last_kind_ns[6];
+        static u32 last_kind_count[6];
+        u64 kind_ns[6];
+        u32 kind_count[6];
+        for (u32 k = 0; k < 6; ++k) {
+            kind_ns[k] = Vulkan::g_gow3_compile_kind_ns[k].load();
+            kind_count[k] = Vulkan::g_gow3_compile_kind_count[k].load();
+        }
+        if (stall && kind_count[0] + kind_count[1] + kind_count[2] + kind_count[3] + kind_count[4] +
+                             kind_count[5] !=
+                         last_kind_count[0] + last_kind_count[1] + last_kind_count[2] +
+                             last_kind_count[3] + last_kind_count[4] + last_kind_count[5]) {
+            const auto part = [&](u32 k) {
+                return std::make_pair(kind_count[k] - last_kind_count[k], (kind_ns[k] - last_kind_ns[k]) / 1e6);
+            };
+            const auto [cs, cs_ms] = part(0);
+            const auto [cv, cv_ms] = part(1);
+            const auto [gs, gs_ms] = part(2);
+            const auto [gv, gv_ms] = part(3);
+            const auto [cp, cp_ms] = part(4);
+            const auto [gp, gp_ms] = part(5);
+            std::printf("       compiles: compute shaders %u %.1f ms + variants %u %.1f ms, compute "
+                        "pipelines %u %.1f ms; graphics shaders %u %.1f ms + variants %u %.1f ms, "
+                        "graphics pipelines %u %.1f ms\n",
+                        cs, cs_ms, cv, cv_ms, cp, cp_ms, gs, gs_ms, gv, gv_ms, gp, gp_ms);
+        }
+        std::copy(std::begin(kind_ns), std::end(kind_ns), std::begin(last_kind_ns));
+        std::copy(std::begin(kind_count), std::end(kind_count), std::begin(last_kind_count));
+        if (stall) {
+            std::printf("       fault handlers: %llu read faults %.1f ms, write faults %.1f ms\n",
+                        static_cast<unsigned long long>(rf - last_rf), (trf - last_trf) / 1e6,
+                        (twf - last_twf) / 1e6);
+        }
+        last_rf = rf;
+        last_trf = trf;
+        last_twf = twf;
+        // gow3 20 Oct 2026 (hybrid laptops): presentation waits inside the long frame.
+        const u64 present_now[4] = {Gow3Stats::frame_wait_ns.load(), Gow3Stats::submit_lock_ns.load(),
+                                    Gow3Stats::acquire_ns.load(), Gow3Stats::present_ns.load()};
+        static u64 last_present[4], window_present[4];
+        if (stall) {
+            std::printf("       presentation: frame waits %.1f ms, submit lock %.1f ms; swap thread "
+                        "acquire %.1f ms, present %.1f ms\n",
+                        (present_now[0] - last_present[0]) / 1e6, (present_now[1] - last_present[1]) / 1e6,
+                        (present_now[2] - last_present[2]) / 1e6, (present_now[3] - last_present[3]) / 1e6);
+        }
+        std::copy(std::begin(present_now), std::end(present_now), std::begin(last_present));
+        const u64 copy_ns = Gow3Stats::t_copy.load(), copy_bytes = Gow3Stats::copy_bytes.load();
+        u64 proc_flt = 0;
+#ifndef _WIN32
+        if (rusage usage{}; getrusage(RUSAGE_SELF, &usage) == 0) {
+            proc_flt = usage.ru_minflt;
+        }
+#endif
+        const u64 t_now[6] = {Gow3Stats::t_resident.load(), Gow3Stats::t_protect.load(),
+                              Gow3Stats::t_image_create.load(), Gow3Stats::t_refresh.load(),
+                              Gow3Stats::t_staging.load(), Gow3Stats::t_host_wait.load()};
+        static u64 last_draws, last_dispatches, last_subs, last_sys, last_user, last_invol, last_vol;
+        const u64 draws = Gow3Stats::draws.load(), dispatches = Gow3Stats::dispatches.load(),
+                  subs = Gow3Stats::submissions.load(), sys_us = Gow3Stats::gpu_sys_us.load(),
+                  user_us = Gow3Stats::gpu_user_us.load(), invol = Gow3Stats::gpu_invol_switches.load(),
+                  vol = Gow3Stats::gpu_vol_switches.load();
+        u64 gpu_ns = 0;
+#ifdef _WIN32
+        // gow3: Windows has no per-thread clock id; the thread's user + kernel time instead.
+        static HANDLE gpu_thread = nullptr;
+        if (!gpu_thread) {
+            if (const unsigned long id = Gow3Stats::gpu_thread_id.load()) {
+                gpu_thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, id);
+            }
+        }
+        if (FILETIME created, exited, kernel, user;
+            gpu_thread && GetThreadTimes(gpu_thread, &created, &exited, &kernel, &user)) {
+            const auto ns = [](const FILETIME& t) {
+                return ((u64(t.dwHighDateTime) << 32) | t.dwLowDateTime) * 100;
+            };
+            gpu_ns = ns(kernel) + ns(user);
+        }
+#else
+        if (const int clock = Gow3Stats::gpu_thread_clock.load(); clock != -1) {
+            timespec ts{};
+            clock_gettime(static_cast<clockid_t>(clock), &ts);
+            gpu_ns = u64(ts.tv_sec) * 1000000000ull + u64(ts.tv_nsec);
+        }
+#endif
+        const u64 images = Gow3Stats::images_registered.load();
+        const u64 image_bytes = Gow3Stats::image_upload_bytes.load();
+        const u64 buffer_bytes = Gow3Stats::buffer_upload_bytes.load();
+        if (stall) {
+            std::printf("       GPU thread on CPU %.1f ms; %llu images registered, "
+                        "%.1f MB image uploads, %.1f MB buffer uploads\n",
+                        (gpu_ns - last_gpu_ns) / 1e6,
+                        static_cast<unsigned long long>(images - last_images),
+                        (image_bytes - last_image_bytes) / 1e6,
+                        (buffer_bytes - last_buffer_bytes) / 1e6);
+            std::printf("       %llu draws, %llu dispatches, %llu submissions; GPU thread user %.1f ms, "
+                        "kernel %.1f ms, %llu preempted, %llu waits\n",
+                        static_cast<unsigned long long>(draws - last_draws),
+                        static_cast<unsigned long long>(dispatches - last_dispatches),
+                        static_cast<unsigned long long>(subs - last_subs), (user_us - last_user) / 1e3,
+                        (sys_us - last_sys) / 1e3, static_cast<unsigned long long>(invol - last_invol),
+                        static_cast<unsigned long long>(vol - last_vol));
+        }
+        if (stall) {
+            std::printf("       ms in: resident %.1f, protect %.1f, image create %.1f, "
+                        "image refresh %.1f, staging %.1f, waiting for host copies %.1f\n",
+                        (t_now[0] - last_t[0]) / 1e6, (t_now[1] - last_t[1]) / 1e6,
+                        (t_now[2] - last_t[2]) / 1e6, (t_now[3] - last_t[3]) / 1e6,
+                        (t_now[4] - last_t[4]) / 1e6, (t_now[5] - last_t[5]) / 1e6);
+            std::printf("       GPU thread page faults %llu (process %llu), protection faults %llu; "
+                        "protect calls %llu (%llu pages), of which write-revoking %llu (%llu pages)\n",
+                        static_cast<unsigned long long>(minflt - last_minflt),
+                        static_cast<unsigned long long>(proc_flt - last_proc_flt),
+                        static_cast<unsigned long long>(sigf - last_sigf),
+                        static_cast<unsigned long long>(pc - last_pc),
+                        static_cast<unsigned long long>(pp - last_pp),
+                        static_cast<unsigned long long>(rc - last_rc),
+                        static_cast<unsigned long long>(rp - last_rp));
+        }
+        last_pc = pc;
+        last_pp = pp;
+        last_rc = rc;
+        last_rp = rp;
+        last_minflt = minflt;
+        if (stall && copy_ns > last_copy_ns) {
+            std::printf("       guest copies %.1f MB in %.1f thread-ms, %.1f ms on CPU (kernel %.1f ms, "
+                        "%llu page faults in large copies) (%.2f GB/s per thread)\n",
+                        (copy_bytes - last_copy_bytes) / 1e6, (copy_ns - last_copy_ns) / 1e6,
+                        (copy_cpu - last_copy_cpu) / 1e6, (copy_sys - last_copy_sys) / 1e3,
+                        static_cast<unsigned long long>(copy_flt - last_copy_flt),
+                        double(copy_bytes - last_copy_bytes) / double(copy_ns - last_copy_ns));
+        }
+        last_copy_ns = copy_ns;
+        last_copy_cpu = copy_cpu;
+        last_copy_sys = copy_sys;
+        last_copy_flt = copy_flt;
+        last_copy_bytes = copy_bytes;
+        last_proc_flt = proc_flt;
+        last_sigf = sigf;
+        std::copy(std::begin(t_now), std::end(t_now), std::begin(last_t));
+        last_draws = draws;
+        last_dispatches = dispatches;
+        last_subs = subs;
+        last_sys = sys_us;
+        last_user = user_us;
+        last_invol = invol;
+        last_vol = vol;
+        last_gpu_ns = gpu_ns;
+        last_images = images;
+        last_image_bytes = image_bytes;
+        last_buffer_bytes = buffer_bytes;
+        ++frames;
+        const double window = std::chrono::duration<double>(now - window_start).count();
+        if (window >= 5.0) {
+            const u32 compiles = Vulkan::g_gow3_compiles.exchange(0);
+            const u64 compile_ns = Vulkan::g_gow3_compile_ns.exchange(0);
+            const double capture_ms = Vulkan::g_gow3_capture_ns.exchange(0) / 1e6;
+            const double async_ms = Vulkan::g_gow3_async_ns.exchange(0) / 1e6;
+            const double wait_ms = Vulkan::g_gow3_compile_wait_ns.exchange(0) / 1e6;
+            const double snapshot_ms = Vulkan::g_gow3_snapshot_ns.exchange(0) / 1e6;
+            const double guest_wait_ms = Vulkan::g_gow3_guest_wait_ns.exchange(0) / 1e6;
+            const u32 pending_draws = Vulkan::g_gow3_pending_draws.exchange(0);
+            const u64 direct = Vulkan::Scheduler::direct_recordings.exchange(0);
+            const u64 faults = Gow3Stats::tracker_faults.exchange(0);
+            // GPU command thread CPU time per draw: comparable between builds even when the scene
+            // (and so the frame rate) differs a little.
+            static u64 window_draws = 0, window_gpu_us = 0;
+            const u64 all_draws = Gow3Stats::draws.load();
+#ifdef _WIN32
+            // gow3 20 Oct 2026: Windows has no rusage (gpu_user_us/gpu_sys_us stay 0, the line
+            // printed 0.00 us/draw): the thread times read above (15.6 ms steps, ~0.3% of 5 s).
+            const u64 gpu_us = gpu_ns / 1000;
+#else
+            const u64 gpu_us = Gow3Stats::gpu_user_us.load() + Gow3Stats::gpu_sys_us.load();
+#endif
+            const double us_per_draw = all_draws > window_draws
+                                           ? double(gpu_us - window_gpu_us) / (all_draws - window_draws)
+                                           : 0.0;
+            const double draws_per_frame = frames ? double(all_draws - window_draws) / frames : 0.0;
+            window_draws = all_draws;
+            window_gpu_us = gpu_us;
+            std::printf("Frame stats: %.1f FPS, worst frame %.1f ms (vblank %u Hz); "
+                        "%u shader/pipeline compiles, %.1f ms; async: capture %.1f ms, workers "
+                        "%.1f ms, sync wait %.1f ms, snapshots %.1f ms, GPU capture wait %.1f ms, "
+                        "%u pending draws; %llu recorder syncs; "
+                        "%.0f write faults/s, %lld hot pages; GPU thread %.2f us/draw, "
+                        "%.0f draws/frame, idle %.1f%%; blocked: recorder %.1f%%, host copies "
+                        "%.1f%% (%.0f/frame), copy threads %.1f%%, GPU ticks %.1f%%; "
+                        "reduced-size draws %.0f/frame of %.0f in the scene\n",
+                        frames / window, worst_ms, EmulatorSettings.GetVblankFrequency(), compiles,
+                        compile_ns / 1e6, capture_ms, async_ms, wait_ms, snapshot_ms, guest_wait_ms,
+                        pending_draws,
+                        static_cast<unsigned long long>(direct),
+                        faults / window, static_cast<long long>(Gow3Stats::hot_pages.load()),
+                        us_per_draw, draws_per_frame,
+                        Gow3Stats::gpu_idle_ns.exchange(0) / (window * 1e7),
+                        Gow3Stats::sync_recording_ns.exchange(0) / (window * 1e7),
+                        Gow3Stats::host_copies_wait_ns.exchange(0) / (window * 1e7),
+                        frames ? double(Gow3Stats::host_copy_waits.exchange(0)) / frames : 0.0,
+                        Gow3Stats::copy_threads_wait_ns.exchange(0) / (window * 1e7),
+                        Gow3Stats::tick_wait_ns.exchange(0) / (window * 1e7),
+                        frames ? double(Gow3Stats::reduced_draws.exchange(0)) / frames : 0.0,
+                        frames ? double(Gow3Stats::scene_draws.exchange(0)) / frames : 0.0);
+            // gow3 20 Oct 2026: the presentation waits of the window (share of its wall time).
+            static u32 window_long_waits;
+            const u32 long_waits = presenter->LongFrameWaits();
+            std::printf("Presentation waits: frames %.1f%% (%u over 1 ms), submit lock %.1f%%; swap "
+                        "thread acquire %.1f%%, present %.1f%%\n",
+                        (present_now[0] - window_present[0]) / (window * 1e7),
+                        long_waits - window_long_waits,
+                        (present_now[1] - window_present[1]) / (window * 1e7),
+                        (present_now[2] - window_present[2]) / (window * 1e7),
+                        (present_now[3] - window_present[3]) / (window * 1e7));
+            window_long_waits = long_waits;
+            std::copy(std::begin(present_now), std::end(present_now), std::begin(window_present));
+            // gow3 20 Oct 2026 (GitHub #95: memory rising over a long session): what holds memory,
+            // every 5 s, so a long run shows which part grows.
+            {
+                const auto& instance = presenter->GetInstance();
+                u64 private_mib = 0, working_mib = 0;
+#ifdef _WIN32
+                PROCESS_MEMORY_COUNTERS_EX memory{};
+                if (K32GetProcessMemoryInfo(GetCurrentProcess(),
+                                            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory),
+                                            sizeof(memory))) {
+                    private_mib = memory.PrivateUsage >> 20;
+                    working_mib = memory.WorkingSetSize >> 20;
+                }
+#endif
+                const bool vram = instance.CanReportMemoryUsage();
+                std::printf("Memory: RAM %llu MiB private, %llu MiB working set; video memory %llu of "
+                            "%llu MiB (driver); buffer arenas %llu MiB (%llu in use, %llu given back "
+                            "so far), images %llu MiB (%llu)\n",
+                            static_cast<unsigned long long>(private_mib),
+                            static_cast<unsigned long long>(working_mib),
+                            static_cast<unsigned long long>(vram ? instance.GetDeviceMemoryUsage() >> 20 : 0),
+                            static_cast<unsigned long long>(vram ? instance.GetDeviceMemoryBudgetNow() >> 20 : 0),
+                            static_cast<unsigned long long>(Gow3Stats::arena_memory_bytes.load() >> 20),
+                            static_cast<unsigned long long>(Gow3Stats::arena_in_use_bytes.load() >> 20),
+                            static_cast<unsigned long long>(Gow3Stats::arena_released_bytes.load() >> 20),
+                            static_cast<unsigned long long>(Gow3Stats::image_bytes.load() >> 20),
+                            static_cast<unsigned long long>(Gow3Stats::images_live.load()));
+                // gow3 1 Nov 2026: GOW3_VRAM_REPORT (test aid), at the 6th and 24th report.
+                static u32 memory_reports = 0;
+                if (++memory_reports == 6 || memory_reports == 24) {
+                    instance.ReportAllocatorMemory();
+                }
+            }
+            presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
+            Vulkan::WaitDiagnostics::Report();
+            // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
+            if (intervals.size() > 2) {
+                std::vector<double> sorted = intervals;
+                std::sort(sorted.begin(), sorted.end());
+                const double median = sorted[sorted.size() / 2];
+                double sum = 0, sq = 0;
+                u32 spikes = 0;
+                for (const double ms : intervals) {
+                    sum += ms;
+                    sq += ms * ms;
+                    spikes += ms > 1.5 * median;
+                }
+                const double mean = sum / intervals.size();
+                std::printf("Frame pacing: median %.2f ms, stddev %.2f ms, p99 %.2f ms, "
+                            "%u frames over 1.5x median\n",
+                            median, std::sqrt(std::max(0.0, sq / intervals.size() - mean * mean)),
+                            sorted[std::min(sorted.size() - 1, sorted.size() * 99 / 100)], spikes);
+            }
+            intervals.clear();
+            window_start = now;
+            frames = 0;
+            worst_ms = 0;
+            stalls_shown = 0;
+            std::fill(std::begin(last_wait) + 1, std::begin(last_wait) + 6, 0);
+        }
+    }
+
+    // gow3 26 Oct 2026 (GitHub #236, AMD): the guest sees the flip done only once the GPU has
+    // finished the frame, as on the console (the flip follows the frame's end of pipe). Before,
+    // the status changed as soon as the present was queued: Uncharted 2 then reused the frame's
+    // memory while the GPU still drew it, and on a slow AMD GPU (Radeon 780M; RX 9070 reported)
+    // the title screen's text ("Press X", the copyright line) was missing in a quarter to half
+    // of the frames. GOW3_FINISH_AT_FLIP=1 (the whole GPU idle at every flip) cured it at 20% of
+    // the frame rate; this waits on the flip thread only, the GPU command thread goes on.
+    // GOW3_FLIP_AFTER_GPU=1: on, otherwise off (opt-in until it is tested on AMD GPUs).
+    {
+        static const bool flip_after_gpu = [] {
+            const char* env = std::getenv("GOW3_FLIP_AFTER_GPU");
+            const bool on = env && env[0] && env[0] != '0';
+            std::printf("VideoOut: flips complete after the frame's GPU work: %s "
+                        "(GOW3_FLIP_AFTER_GPU)\n",
+                        on ? "on" : "off");
+            std::fflush(stdout);
+            return on;
+        }();
+        if (flip_after_gpu && flip_ready_semaphore && flip_ready_tick) {
+            const vk::SemaphoreWaitInfo wait_info = {
+                .semaphoreCount = 1,
+                .pSemaphores = &flip_ready_semaphore,
+                .pValues = &flip_ready_tick,
+            };
+            // Bounded: a lost device must not hang the flip thread (the old behaviour then).
+            (void)presenter->GetInstance().GetDevice().waitSemaphores(wait_info, 2'000'000'000ULL);
+        }
+    }
+
+    // Update flip status.
+    auto* port = req.port;
+    {
+        std::unique_lock lock{port->port_mutex};
+        auto& flip_status = port->flip_status;
+        flip_status.count++;
+        flip_status.process_time = Libraries::Kernel::sceKernelGetProcessTime();
+        flip_status.tsc = Libraries::Kernel::sceKernelReadTsc();
+        flip_status.flip_arg = req.flip_arg;
+        flip_status.current_buffer = req.index;
+        if (req.eop) {
+            --flip_status.gc_queue_num;
+        }
+        --flip_status.flip_pending_num;
+    }
+
+    // Trigger flip events for the port.
+    for (auto event : port->flip_events) {
+        auto equeue = Kernel::GetEqueue(event);
+        if (equeue != nullptr) {
+            equeue->TriggerEvent(
+                static_cast<u64>(OrbisVideoOutInternalEventId::Flip),
+                Kernel::OrbisKernelEvent::Filter::VideoOut,
+                reinterpret_cast<void*>(static_cast<u64>(OrbisVideoOutInternalEventId::Flip) |
+                                        (req.flip_arg << 16)));
+        }
+    }
+
+    // Reset prev flip label
+    if (port->prev_index != -1) {
+        port->buffer_labels[port->prev_index] = 0;
+        port->SignalVoLabel();
+    }
+    // save to prev buf index
+    port->prev_index = req.index;
+}
+
+void VideoOutDriver::DrawBlankFrame() {
+    RunPresenter([this] {
+        const auto empty_frame = presenter->PrepareBlankFrame(true);
+        presenter->Present(empty_frame, false, false);
+    }, true);
+}
+
+void VideoOutDriver::DrawLastFrame() {
+    RunPresenter([this] {
+        const auto frame = presenter->PrepareLastFrame();
+        if (frame != nullptr) {
+            presenter->Present(frame, true);
+        }
+    }, true);
+}
+
+bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
+                                bool is_eop /*= false*/) {
+    LogFrameEvent('S');
+    {
+        std::unique_lock lock{port->port_mutex};
+        if (index != -1 && port->flip_status.flip_pending_num > 16) {
+            LOG_ERROR(Lib_VideoOut, "Flip queue is full");
+            return false;
+        }
+
+        if (is_eop) {
+            ++port->flip_status.gc_queue_num;
+        }
+        ++port->flip_status.flip_pending_num; // integral GPU and CPU pending flips counter
+        port->flip_status.submit_tsc = Libraries::Kernel::sceKernelReadTsc();
+    }
+
+    if (!is_eop) {
+        // Non EOP flips can arrive from any thread so ask GPU thread to perform them
+        liverpool->SendCommand([=, this]() { SubmitFlipInternal(port, index, flip_arg, is_eop); });
+    } else {
+        SubmitFlipInternal(port, index, flip_arg, is_eop);
+    }
+
+    return true;
+}
+
+// Runs a flip queued through the draw pipeline (SubmitFlipInternal) in stream order: on the draw
+// recording thread after the fences the Vulkan recording thread signals, else at once.
+static void QueueFlipInOrder(Vulkan::Rasterizer& rasterizer, const u8* data) {
+    std::function<void()>* task;
+    std::memcpy(&task, data, sizeof(task));
+    const auto run = [task] {
+        (*task)();
+        delete task;
+    };
+    auto& cache = rasterizer.GetBufferCache();
+    // A fence before the flip waiting for its readback (RunEventWriteEop): the flip queues
+    // behind it.
+    if (Vulkan::DrawPipe::OnStageB() && !Gow3Toggle::Disabled(Gow3Toggle::RecorderFences) &&
+        !cache.HasDeferredSignals()) {
+        rasterizer.SignalAfterHostCopies(run);
+        return;
+    }
+    rasterizer.WaitHostCopies();
+    rasterizer.WaitDeferredSignals();
+    if (!cache.HasDeferredSignals() || !cache.DeferUntilLastReadback(run, 0)) {
+        run();
+    }
+}
+
+void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop) {
+    // gow3 diagnostics (GOW3_FINISH_AT_FLIP=1): the GPU finishes all work before each flip, so the
+    // GPU work of consecutive frames never overlaps (Uncharted 3's cloth flicker shows only above
+    // 30 FPS, 16 Oct).
+    static const bool finish_at_flip = [] {
+        const char* env = std::getenv("GOW3_FINISH_AT_FLIP");
+        return env && env[0] == '1';
+    }();
+    if (finish_at_flip) {
+        presenter->GetRasterizer().Finish();
+    }
+    AmdGpu::g_gow3_flips.fetch_add(1, std::memory_order_relaxed);
+    Vulkan::Frame* frame;
+    if (index == -1) {
+        frame = presenter->PrepareBlankFrame(false);
+    } else {
+        const auto& buffer = port->buffer_slots[index];
+        ASSERT_MSG(buffer.group_index >= 0, "Trying to flip an unregistered buffer!");
+        const auto& group = port->groups[buffer.group_index];
+        frame = presenter->PrepareFrame(group, buffer.address_left);
+    }
+
+    const auto queue_flip = [this, frame, port, flip_arg, index, is_eop] {
+        {
+            std::scoped_lock lock{mutex};
+            requests.push({
+                .frame = frame,
+                .port = port,
+                .flip_arg = flip_arg,
+                .index = index,
+                .eop = is_eop,
+            });
+        }
+        request_cv.notify_one();
+#ifdef _WIN32
+        // gow3 (GOW3_HR_VBLANK): set after the push, so a vblank thread that found the queue
+        // empty under the lock wakes on it (the event stays set until a wait consumes it).
+        if (waits.request_event) {
+            SetEvent(waits.request_event);
+        }
+#endif
+    };
+    // gow3 16 Oct: a fence deferred until its ray-cast results are back (RunEventWriteEop) comes
+    // before this frame's flip, as on the console: the guest takes a finished flip as its frame's
+    // end-of-pipe being done (Uncharted 2 asserted m_gfxEopTick in FrameBegin when the flip came
+    // first). Presenting waits for the frame's GPU work anyway, so this costs no frame rate.
+    // GOW3_DEFER_FLIPS=0: queued at once.
+    static const bool defer_flips = [] {
+        const char* env = std::getenv("GOW3_DEFER_FLIPS");
+        return !(env && env[0] == '0');
+    }();
+    auto& rasterizer = presenter->GetRasterizer();
+    // gow3 16 Oct: with multithreaded rendering (draw pipeline) end-of-pipe fences are written by
+    // the Vulkan recording thread after the copies before them (RunEventWriteEop, RecorderFences),
+    // later than this point on the GPU command thread. Queued at once, the flip overtook its
+    // frame's fence, the guest went on (a finished flip means its frame is done) and Uncharted 3
+    // asserted m_gfxEopTick of frame N-3 in FrameBegin within a minute. The flip now goes through
+    // the draw pipeline in stream order and is queued after the fences recorded before it.
+    if (defer_flips && rasterizer.DrawPipeActive()) {
+        auto* task = new std::function<void()>(queue_flip);
+        rasterizer.RunInOrder(&QueueFlipInOrder, &task, sizeof(task), Gow3Toggle::RecorderFences);
+        return;
+    }
+    auto& buffer_cache = rasterizer.GetBufferCache();
+    if (!defer_flips || !buffer_cache.HasDeferredSignals() ||
+        !buffer_cache.DeferUntilLastReadback(queue_flip, 0)) {
+        queue_flip();
+    }
+}
+
+} // namespace Libraries::VideoOut
+
+namespace Libraries::Videodec2 {
+extern std::atomic<s64> last_movie_frame_ns; // shim/videodec2/videodec2.cpp
+} // namespace Libraries::Videodec2
+
+namespace Libraries::VideoOut {
+
+namespace {
+/// A movie frame was decoded in the last 300 ms: a prerecorded cutscene is playing.
+bool MovieActive(std::chrono::steady_clock::time_point now) {
+    const s64 last = Videodec2::last_movie_frame_ns.load(std::memory_order_relaxed);
+    return last && now.time_since_epoch().count() - last < 300'000'000;
+}
+} // namespace
+
+void VideoOutDriver::PresentThread(std::stop_token token) {
+    const std::chrono::nanoseconds base_period(1000000000 / EmulatorSettings.GetVblankFrequency());
+    std::chrono::nanoseconds vblank_period = base_period;
+
+    Common::SetCurrentThreadName("shadPS4:PresentThread");
+    Common::SetCurrentThreadRealtime(vblank_period);
+#ifdef _WIN32
+    // gow3 20 Oct 2026 (GOW3_HR_VBLANK): the old wait spun through each tick's last millisecond,
+    // so the thread was already running when the tick ended, even with every core busy. Asleep
+    // until the deadline, it runs above normal priority, so that when its timer fires it
+    // preempts a normal-priority thread (guest and port threads) instead of queueing behind one
+    // (a timer wake-up gets no priority boost). It runs a few microseconds per tick.
+    // GOW3_VBLANK_PRIORITY=0: normal priority.
+    if (waits.timer) {
+        const char* env = std::getenv("GOW3_VBLANK_PRIORITY");
+        const bool raise = !(env && env[0] == '0');
+        if (raise) {
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+        }
+        std::printf("VideoOut: vblank thread at %s priority\n",
+                    raise ? "above normal (GOW3_VBLANK_PRIORITY=0: normal)"
+                          : "normal (GOW3_VBLANK_PRIORITY=0)");
+    }
+#endif
+
+    Common::AccurateTimer timer{vblank_period};
+
+    // gow3: frame limit (see EmulatorSettings::GetFrameLimit). A request waits in the queue
+    // until its slot; slots advance by one period (no drift) but never lag behind by more.
+    // gow3: the in-game menu changes the limit live (Gow3Settings::fps_limit); GOW3_FPS_LIMIT
+    // and the uncapped presets keep their fixed limit.
+    // Uncharted: the menu's limit also applies with the frame rate unlocked (GOW3_VBLANK_HZ=0,
+    // 480 Hz vblank); only an explicit GOW3_FPS_LIMIT fixes it.
+    const bool fixed_limit = std::getenv("GOW3_FPS_LIMIT") != nullptr;
+    const auto current_limit = [&] {
+        const auto& s = Gow3Settings::Get();
+        return fixed_limit ? EmulatorSettings.GetFrameLimit()
+                           : u32(Gow3Graphics::PresentLimit(s.fps_limit));
+    };
+    u32 frame_limit = current_limit();
+    auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
+                                    : std::chrono::nanoseconds(0);
+    auto next_flip = std::chrono::steady_clock::now();
+    std::printf("VideoOut: vblank %u Hz, frame limit %u FPS\n",
+                EmulatorSettings.GetVblankFrequency(), frame_limit);
+
+    const auto receive_request = [this] -> Request {
+        std::scoped_lock lk{mutex};
+        if (!requests.empty()) {
+            const auto request = requests.front();
+            requests.pop();
+            return request;
+        }
+        return {};
+    };
+
+    // gow3: with a frame limit (uncapped presets) a queued flip is presented as soon as it
+    // arrives and its slot allows, between vblanks, instead of on the next vblank tick.
+    bool immediate_flips = frame_limit != 0;
+
+    // gow3 18 Oct 2026: the frame rate unlocked (480 Hz vblank, the limit paces the presents)
+    // with VSync and a limit at or above the display's refresh rate: frames the game made
+    // faster than the display queued up behind VSync and the game was held back in bursts.
+    // On the user's 75 Hz monitor at the 120 limit: two or three 6 ms frames, then one of
+    // 25-35 ms (75 FPS, 1% lows 32, 28% of the frames over 20 ms). The vblank then follows the
+    // display (up to 120 Hz) and the game paces itself to it, as at 60: 75 FPS, 1% lows 66,
+    // none over 20 ms. Live with the menu's VSync and limit; displays above 120 Hz, VSync off
+    // and lower limits keep the fast vblank (frames shown as soon as they are done).
+    const bool adaptive_vblank = EmulatorSettings.GetVblankFrequency() == 480;
+    const auto paced_period = [&](u32 limit) {
+        if (!adaptive_vblank) {
+            return base_period;
+        }
+        static const double refresh = Gow3DisplayRefreshRate();
+        const bool vsync = Gow3Settings::Get().vsync;
+        if (vsync && refresh > 29.5 && refresh < 120.5 && (limit == 0 || limit + 0.5 >= refresh)) {
+            return std::chrono::nanoseconds(s64(1e9 / refresh));
+        }
+        return base_period;
+    };
+
+    // gow3 (after the reference Uncharted port): prerecorded movies (the Collection's cutscenes)
+    // show one video frame per vblank of a 60 Hz display; with the frame rate unlocked (480 Hz
+    // vblank) they played too fast and out of sync with their sound (user, Uncharted 3, 18 Oct).
+    // While a movie is being decoded the guest gets vblanks and flips at 60 Hz; gameplay keeps
+    // the configured rate.
+    constexpr std::chrono::nanoseconds movie_period{1000000000 / 60};
+    auto next_movie_vblank = std::chrono::steady_clock::now();
+    bool movie_shown = false;
+
+    // gow3 20 Oct 2026 (idle CPU, GOW3_HR_VBLANK; see WaitHandles): with immediate flips the
+    // thread sleeps until the tick's deadline, a queued flip or the flip's slot on a
+    // high-resolution timer instead of spinning out each tick's last millisecond.
+    bool chain_ticks = false; ///< the last tick ended at last_tick_deadline (hr_wait)
+    auto last_tick_deadline = std::chrono::steady_clock::now();
+#ifdef _WIN32
+    const bool hr_waits = waits.timer && waits.request_event;
+    // Sleeps until `deadline`, or with `for_request` until a flip is queued; returns whether
+    // one is queued (checked again at the deadline, as wait_until with a predicate does). The
+    // auto-reset event can be left set by a flip already taken: then one more pass.
+    const auto hr_wait = [&](std::chrono::steady_clock::time_point deadline, bool for_request) {
+        const HANDLE handles[2] = {waits.timer, waits.request_event};
+        while (true) {
+            if (for_request) {
+                std::scoped_lock lk{mutex};
+                if (!requests.empty()) {
+                    return true;
+                }
+            }
+            const auto left = deadline - std::chrono::steady_clock::now();
+            if (left <= std::chrono::nanoseconds(0)) {
+                break;
+            }
+            if (left < std::chrono::microseconds(20)) {
+                // A few microseconds left: arming the timer would cost its whole wake-up delay.
+                while (std::chrono::steady_clock::now() < deadline) {
+                    __builtin_ia32_pause();
+                }
+                break;
+            }
+            LARGE_INTEGER due{};
+            due.QuadPart = -static_cast<LONGLONG>((left.count() + 99) / 100); // relative, 100 ns
+            if (!SetWaitableTimer(waits.timer, &due, 0, nullptr, nullptr, FALSE)) {
+                Sleep(1);
+                continue;
+            }
+            WaitForMultipleObjects(for_request ? 2 : 1, handles, FALSE, INFINITE);
+        }
+        if (!for_request) {
+            return false;
+        }
+        std::scoped_lock lk{mutex};
+        return !requests.empty();
+    };
+#else
+    constexpr bool hr_waits = false;
+    const auto hr_wait = [](std::chrono::steady_clock::time_point, bool) { return false; };
+#endif
+
+    // gow3 1 Nov 2026 (user: Uncharted 1's camera jerky at 75 FPS on a 75 Hz monitor, on both
+    // PCs, in some sessions only): following the display, the flips must not get ahead of it.
+    // A late flip let the next one through at once (the schedule caught up by up to one period).
+    // With VSync each such pair left one more frame queued for the display, and the queue never
+    // drained (one flip per refresh). Once it was full, every frame waited for the display on the
+    // GPU thread and the game ran in 23 + 3 ms pairs: 75 FPS on the counter, ~37 Hz of motion.
+    // A flip late by more than a quarter period now moves the schedule instead of catching up,
+    // and a queue found full (a quarter of a second's flips waited for a presentation frame;
+    // with the default one frame queued only) gets one flip slot skipped, which drains a frame
+    // (one frame shown twice, at most every 2 s).
+    // GOW3_DISPLAY_QUEUE=0: both off; =drain: the drain only (test: the old catch-up).
+    static const int display_queue_fix = [] {
+        const char* env = std::getenv("GOW3_DISPLAY_QUEUE");
+        return env && env[0] == '0' ? 0 : env && !std::strcmp(env, "drain") ? 1 : 2;
+    }();
+    const auto following_display = [&] {
+        return display_queue_fix && vblank_period != base_period;
+    };
+    u32 window_flips = 0;
+    const auto advance_flip_slot = [&](std::chrono::steady_clock::time_point now) {
+        ++window_flips;
+        next_flip = following_display() && display_queue_fix == 2
+                        ? std::max(next_flip + frame_period, now + frame_period - frame_period / 4)
+                        : std::max(next_flip + frame_period, now - frame_period);
+    };
+    // Waits for a presentation frame (GPU thread) and for a swapchain image (present thread,
+    // Swapchain::AcquireNextImage): either one means frames are queued for the display.
+    const auto queue_waits = [&] { return presenter->LongFrameWaits() + presenter->LongAcquireWaits(); };
+    u32 window_long_waits = queue_waits();
+    auto queue_window = std::chrono::steady_clock::now();
+    auto next_drain = queue_window;
+    u32 drains_shown = 0;
+
+    while (!token.stop_requested()) {
+        if (const u32 limit = current_limit(); limit != frame_limit) {
+            frame_limit = limit;
+            frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit) : std::chrono::nanoseconds(0);
+            vblank_period = base_period - std::chrono::nanoseconds(1); // re-evaluated below
+            immediate_flips = limit != 0;
+            next_flip = std::chrono::steady_clock::now();
+            std::printf("VideoOut: frame limit %u FPS\n", limit);
+        }
+        if (const auto period = paced_period(frame_limit); period != vblank_period) {
+            vblank_period = period;
+            timer = Common::AccurateTimer{period};
+            // Following the display, presents keep its rate too (the higher limit let them run
+            // ahead between vblanks and queue up behind VSync again).
+            frame_period = period != base_period ? period
+                           : frame_limit         ? std::chrono::nanoseconds(1000000000 / frame_limit)
+                                                 : std::chrono::nanoseconds(0);
+            next_flip = std::chrono::steady_clock::now();
+            chain_ticks = false;
+            std::printf("VideoOut: vblank %.2f Hz (%s)\n", 1e9 / double(period.count()),
+                        period == base_period ? "fast" : "follows the display with VSync");
+        }
+        // gow3 29 Oct 2026 (user, Uncharted 3 at 4K, 120 FPS limit, movies too fast): with a 60 Hz
+        // vblank and a limit above 60 the flips still come between vblanks (immediate flips), so
+        // a movie showed one frame per flip at 120 FPS: twice its speed. Movie pacing now also
+        // applies when the frame limit, not only the vblank, is faster than the movie's 60 Hz.
+        const bool fast_vblank = vblank_period < movie_period - std::chrono::microseconds(500) ||
+                                 (frame_limit != 0 && immediate_flips &&
+                                  frame_period < movie_period - std::chrono::microseconds(500));
+        timer.Start();
+        const auto tick_start = std::chrono::steady_clock::now();
+        auto tick_deadline = tick_start + vblank_period;
+        // gow3 20 Oct 2026 (GOW3_HR_VBLANK): a tick that follows one ended at its deadline by
+        // the high-resolution wait below runs from that deadline, not from the wake-up. The timer
+        // wakes a little late (tens to hundreds of microseconds) and counted from the wake-up the
+        // delays would add up (a 75 Hz vblank at ~73 Hz); the old wait spun through the last
+        // millisecond and woke on time, so this keeps its cadence. A tick that starts later than
+        // such a delay (a pause, a slow flip) runs from now, as before.
+        if (chain_ticks) {
+            chain_ticks = false;
+            const auto late = tick_start - last_tick_deadline;
+            if (late >= std::chrono::nanoseconds(0) &&
+                late < std::min<std::chrono::nanoseconds>(std::chrono::milliseconds(1),
+                                                          vblank_period / 2)) {
+                tick_deadline = last_tick_deadline + vblank_period;
+            }
+        }
+
+        if (DebugState.IsGuestThreadsPaused()) {
+            DrawLastFrame();
+            timer.End();
+            continue;
+        }
+
+        // Check if it's time to take a request.
+        auto& vblank_status = main_port.vblank_status;
+        const auto now = std::chrono::steady_clock::now();
+        const bool movie = fast_vblank && MovieActive(now);
+        if (movie != movie_shown) {
+            movie_shown = movie;
+            std::printf("VideoOut: %s\n", movie ? "movie playing, 60 Hz vblank" : "movie ended");
+        }
+        if (movie) {
+            if (now + vblank_period / 2 < next_movie_vblank) {
+                timer.End();
+                continue;
+            }
+            next_movie_vblank = std::max(next_movie_vblank + movie_period, now - movie_period);
+        }
+        if (now - queue_window >= std::chrono::seconds(1)) {
+            const u32 long_waits = queue_waits();
+            // With more frames queued (or none), waiting for a frame can be the GPU working.
+            if (following_display() && !movie && window_flips >= 10 &&
+                Gow3Settings::Get().frames_queued.load() == 1 &&
+                (long_waits - window_long_waits) * 4 >= window_flips && now >= next_drain) {
+                next_flip = std::max(next_flip, now) + vblank_period;
+                next_drain = now + std::chrono::seconds(2);
+                if (drains_shown < 20) {
+                    ++drains_shown;
+                    std::printf("VideoOut: display queue full (%u of %u flips waited), one flip "
+                                "slot skipped to drain it (GOW3_DISPLAY_QUEUE=0: off)\n",
+                                long_waits - window_long_waits, window_flips);
+                }
+            }
+            window_long_waits = long_waits;
+            window_flips = 0;
+            queue_window = now;
+        }
+        const bool flip_slot = movie || !frame_limit || now >= next_flip;
+        if (flip_slot && vblank_status.count % (main_port.flip_rate + 1) == 0) {
+            const auto request = receive_request();
+            if (request && frame_limit) {
+                advance_flip_slot(now);
+            }
+            if (!request) {
+                if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
+                    if (!main_port.is_open) {
+                        DrawBlankFrame();
+                    } else if (ImGui::Core::MustKeepDrawing()) {
+                        DrawLastFrame();
+                    }
+                }
+            } else {
+                Flip(request);
+                FRAME_END;
+            }
+        }
+
+        {
+            // Needs lock here as can be concurrently read by `sceVideoOutGetVblankStatus`
+            std::scoped_lock lock{main_port.vo_mutex};
+
+            // Trigger flip events for the port
+            LogFrameEvent('V');
+            for (auto event : main_port.vblank_events) {
+                auto equeue = Kernel::GetEqueue(event);
+                if (equeue != nullptr) {
+                    equeue->TriggerEvent(
+                        static_cast<u64>(OrbisVideoOutInternalEventId::Vblank),
+                        Kernel::OrbisKernelEvent::Filter::VideoOut,
+                        reinterpret_cast<void*>(
+                            static_cast<u64>(OrbisVideoOutInternalEventId::Vblank) |
+                            (vblank_status.count << 16)));
+                }
+            }
+
+            // Update vblank status
+            vblank_status.count++;
+            vblank_status.process_time = Libraries::Kernel::sceKernelGetProcessTime();
+            vblank_status.tsc = Libraries::Kernel::sceKernelReadTsc();
+            main_port.vblank_cv.notify_all();
+        }
+
+        if (!immediate_flips || main_port.flip_rate != 0 || movie) {
+            timer.End();
+            continue;
+        }
+        if (hr_waits) {
+            // The loop below with the high-resolution waits: same steps and deadlines.
+            while (!token.stop_requested()) {
+                if (!hr_wait(tick_deadline, true)) {
+                    break; // next vblank
+                }
+                if (std::chrono::steady_clock::now() < next_flip) {
+                    if (next_flip >= tick_deadline) {
+                        break;
+                    }
+                    hr_wait(next_flip, false);
+                }
+                const auto now = std::chrono::steady_clock::now();
+                const auto request = receive_request();
+                if (request) {
+                    advance_flip_slot(now);
+                    Flip(request);
+                    FRAME_END;
+                }
+            }
+            hr_wait(tick_deadline, false);
+            last_tick_deadline = tick_deadline;
+            chain_ticks = true;
+            continue;
+        }
+        while (!token.stop_requested()) {
+            {
+                std::unique_lock lk{mutex};
+                if (!request_cv.wait_until(lk, tick_deadline,
+                                           [&] { return !requests.empty(); })) {
+                    break; // next vblank
+                }
+            }
+            if (std::chrono::steady_clock::now() < next_flip) {
+                if (next_flip >= tick_deadline) {
+                    break;
+                }
+                std::this_thread::sleep_until(next_flip);
+            }
+            const auto now = std::chrono::steady_clock::now();
+            const auto request = receive_request();
+            if (request) {
+                advance_flip_slot(now);
+                Flip(request);
+                FRAME_END;
+            }
+        }
+        std::this_thread::sleep_until(tick_deadline);
+    }
+}
+
+} // namespace Libraries::VideoOut

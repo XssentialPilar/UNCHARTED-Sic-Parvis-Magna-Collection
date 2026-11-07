@@ -1,0 +1,28 @@
+sss......................Mods: A: 1 files
+...Mods: A: 1 files
+Mods: dvdroot_ps4\data\a.wad: A -> B
+Mods: B: 1 files
+Mods: 1 game files replaced, 0 added
+Mods: B: 1 files
+Mods: dvdroot_ps4\data\a.wad: B -> A
+Mods: A: 1 files
+Mods: 1 game files replaced, 0 added
+.Mods: A: 2 files
+Mods: 1 game files replaced, 1 added
+...Mods: Upper: 1 files
+Mods: 1 game files replaced, 0 added
+.s..Mods: Archive: 1 files
+Mods: 1 game files replaced, 0 added
+Mods: Nested: 1 files
+Mods: 1 game files replaced, 0 added
+.s.......ssssssssssssssssssssssssssss
+----------------------------------------------------------------------
+Ran 73 tests in 0.774s
+
+OK (skipped=33)
+AppContent profile: SKU=trial (probe setting), user params=[13, 0, 0, 4294967295], mounted add-ons=0
+Linked native libc: base=0x10000, 1 fallback exports, TLS=32 bytes; eboot TLS=0 bytes, fs->gs patched=0
+Linked native libc: base=0x10000, 1 fallback exports, TLS=32 bytes; eboot TLS=0 bytes, fs->gs patched=0
+Linked native libc: base=0x10000, 1 fallback exports, TLS=32 bytes; eboot TLS=48 bytes, fs->gs patched=2
+Linked native libc: base=0x10000, 0 fallback exports, TLS=32 bytes; eboot TLS=0 bytes, fs->gs patched=0
+Linked native libc: base=0x10000, 1 fallback exports, TLS=32 bytes; eboot TLS=0 bytes, fs->gs patched=0

@@ -1,0 +1,1437 @@
+/* Minimal x86-64 native loader experiment. Not a PS4 emulator or game port. */
+#define _GNU_SOURCE
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
+#include "runtime.h"
+#include "cpu_check.h"
+#include "orb_hook.h"
+#include "cheat_hook.h"
+#include "actor_hook.h"
+#include "damage_hook.h"
+#include "runtime_mouselook.h"
+#include "runtime_gamesettings.h"
+#include "gpu/gow3gpu.h"
+#if !defined(__x86_64__) || !defined(__GNUC__)
+#error This prototype requires x86-64 GCC or Clang (including MinGW).
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#include <tlhelp32.h>
+#else
+#include <sys/mman.h>
+#include <malloc.h>
+#include <unistd.h>
+#include <signal.h>
+#include <ucontext.h>
+#include <fcntl.h>
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <sys/syscall.h>
+#include <sys/uio.h>
+#endif
+
+typedef struct { uint64_t address, size, flags; } Segment;
+typedef struct { uint64_t target, kind, value, addend; } Reloc;
+static char (*names)[128];
+static uint64_t import_count;
+static unsigned char *image;
+static size_t page_size;
+typedef struct { uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module; } LinkedModule;
+static LinkedModule modules[16];
+static uint64_t module_count;
+static int entered_game;
+static int gpu_enabled;
+int vulkan_smoke(void);
+/* runtime_redzone.c: guest leaf functions' red zones kept clear of exception frames. */
+uint64_t runtime_redzone_install(unsigned char *image, uint64_t size, const uint64_t *segments, uint64_t count);
+void runtime_redzone_after_fault(void *context);
+int runtime_isa_configure(uint32_t leaf1_ecx, uint32_t leaf7_ebx, uint32_t ext1_ecx, char *missing, size_t size);
+int runtime_isa_emulate(void *context);
+
+static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
+static uint64_t read64(FILE *f) {
+    unsigned char b[8];
+    if (fread(b, 1, 8, f) != 8) fail("truncated boot file");
+    uint64_t n = 0;
+    for (int i = 7; i >= 0; --i) n = (n << 8) | b[i];
+    return n;
+}
+static size_t round_page(size_t size) { return (size + page_size - 1) & ~(page_size - 1); }
+static void *allocate(size_t size) {
+    void *low=runtime_low_map(size,PROT_READ|PROT_WRITE);
+    if (low) return low;
+#ifdef _WIN32
+    void *p = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!p) fail("VirtualAlloc failed");
+#else
+    void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) fail("mmap failed");
+#endif
+    return p;
+}
+/* Some games encode image pointers as offsets in a fixed 2 GiB static range.
+ * Keep the image there without replacing any existing host mapping. */
+static void *allocate_low_image(size_t size) {
+    for (uintptr_t address=UINT64_C(0x400000); address+size<UINT64_C(0x80000000); address+=UINT64_C(0x1000000)) {
+#ifdef _WIN32
+        void *p=VirtualAlloc((void *)address,size,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE);
+        if (p) return p;
+#else
+        void *p=mmap((void *)address,size,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
+        if (p!=MAP_FAILED) return p;
+#endif
+    }
+    fail("cannot allocate guest image below 2 GiB");
+    return NULL;
+}
+static void protect(void *p, size_t size, unsigned flags) {
+#ifdef _WIN32
+    DWORD old, mode = PAGE_NOACCESS;
+    if (flags & 1) mode = (flags & 2) ? PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ;
+    else if (flags & 2) mode = PAGE_READWRITE;
+    else if (flags & 4) mode = PAGE_READONLY;
+    if (!VirtualProtect(p, size, mode, &old)) fail("VirtualProtect failed");
+    FlushInstructionCache(GetCurrentProcess(), p, size);
+#else
+    int mode = ((flags & 4) ? PROT_READ : 0) | ((flags & 2) ? PROT_WRITE : 0) | ((flags & 1) ? PROT_EXEC : 0);
+    if (mprotect(p, size, mode)) fail("mprotect failed");
+#endif
+}
+static ABI __attribute__((noreturn)) void unresolved(uint32_t id, uintptr_t argument) {
+    if (id >= import_count) fail("bad import trap index");
+    printf("STOP: first unsupported PS4 import: %s (index %u)\n", names[id], id);
+    printf("API: %s\n", runtime_import_name(names[id]));
+    printf("Caller return offset: 0x%" PRIxPTR "; first argument: 0x%" PRIxPTR "\n",
+           (uintptr_t)__builtin_return_address(0) - (uintptr_t)image, argument);
+    uintptr_t caller=(uintptr_t)__builtin_return_address(0)-(uintptr_t)image;
+    for (uint64_t m=0;m<module_count;++m)
+        if (caller>=modules[m].base && caller-modules[m].base<modules[m].size)
+            printf("Caller in linked module %" PRIu64 " (%s): +0x%" PRIxPTR "\n",m,m==0 ? "libc.prx" : "system module",caller-modules[m].base);
+    runtime_report();
+    puts(entered_game ? "Original guest entry instructions executed; game initialization is incomplete." :
+                        "Native libc initialization is incomplete; game entry has not run.");
+    fflush(NULL);
+    _exit(20); /* no destructors: GPU, audio and guest threads are still running */
+}
+#ifndef _WIN32
+/* enter_on_stack(entry, arg0, arg1, stack_top): call entry(arg0,arg1) on a new stack. */
+void enter_on_stack(void *entry, void *arg0, void *arg1, void *top);
+__asm__(".text\n.globl enter_on_stack\nenter_on_stack:\n"
+        " push %rbp\n mov %rsp,%rbp\n and $-16,%rcx\n mov %rcx,%rsp\n"
+        " mov %rdi,%rax\n mov %rsi,%rdi\n mov %rdx,%rsi\n call *%rax\n"
+        " mov %rbp,%rsp\n pop %rbp\n ret\n");
+#endif
+static ABI void guest_exit(void) { puts("Runtime: process finalizer callback reached"); }
+#ifdef _WIN32
+static void describe_address(char *out, size_t size, uintptr_t address) {
+    HMODULE module=NULL;
+    char name[MAX_PATH]="?";
+    if (image && address-(uintptr_t)image<0x20000000) { snprintf(out,size,"guest offset 0x%" PRIxPTR,address-(uintptr_t)image); return; }
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCSTR)address,&module) && module) {
+        GetModuleFileNameA(module,name,sizeof(name));
+        const char *base=strrchr(name,'\\');
+        snprintf(out,size,"%s+0x%" PRIxPTR,base ? base+1 : name,address-(uintptr_t)module);
+        return;
+    }
+    snprintf(out,size,"%p",(void *)address);
+}
+static int fatal_reported;
+static LONG fatal_exception(EXCEPTION_POINTERS *info) {
+    if (__atomic_exchange_n(&fatal_reported,1,__ATOMIC_ACQ_REL)) { Sleep(INFINITE); }
+    const EXCEPTION_RECORD *record=info->ExceptionRecord;
+    const CONTEXT *c=info->ContextRecord;
+    char where[MAX_PATH+64];
+    describe_address(where,sizeof(where),(uintptr_t)c->Rip);
+    if (record->ExceptionCode==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2)
+        fprintf(stderr,"Fault: %s access to %p at %s (thread %lu)\n",
+                record->ExceptionInformation[0]==1 ? "write" : record->ExceptionInformation[0]==8 ? "execute" : "read",
+                (void *)record->ExceptionInformation[1],where,GetCurrentThreadId());
+    else
+        fprintf(stderr,"Fault: exception 0x%08lx at %s (thread %lu)\n",record->ExceptionCode,where,GetCurrentThreadId());
+    fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
+            c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
+    if (gpu_enabled) gow3gpu_dump_guest_writes(info);
+    /* Host code: unwound with the executable's unwind tables (optimized host code keeps no frame
+     * pointers); stops at guest code, which has none. */
+    {
+        CONTEXT ctx=*c;
+        for (int depth=0; depth<40; ++depth) {
+            DWORD64 image_base=0;
+            PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(ctx.Rip,&image_base,NULL);
+            describe_address(where,sizeof(where),(uintptr_t)ctx.Rip);
+            fprintf(stderr,"  host #%d %s\n",depth,where);
+            if (!fn) {
+                if (depth) break;
+                /* A leaf function: its return address is on top of the stack. */
+                DWORD64 ret=0; SIZE_T got=0;
+                if (!ReadProcessMemory(GetCurrentProcess(),(void *)(uintptr_t)ctx.Rsp,&ret,sizeof(ret),&got) || got!=sizeof(ret)) break;
+                ctx.Rip=ret; ctx.Rsp+=8;
+                continue;
+            }
+            PVOID handler_data=NULL; DWORD64 establisher=0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER,image_base,ctx.Rip,fn,&ctx,&handler_data,&establisher,NULL);
+            if (!ctx.Rip) break;
+        }
+    }
+    /* rbp chain (guest and host code keep frame pointers). */
+    uintptr_t rbp=(uintptr_t)c->Rbp;
+    for (int depth=0; depth<24 && rbp; ++depth) {
+        uintptr_t frame[2];
+        SIZE_T got=0;
+        if (!ReadProcessMemory(GetCurrentProcess(),(void *)rbp,frame,sizeof(frame),&got) || got!=sizeof(frame) || frame[0]<=rbp) break;
+        describe_address(where,sizeof(where),frame[1]);
+        fprintf(stderr,"  #%d %s\n",depth,where);
+        rbp=frame[0];
+    }
+    if (gpu_enabled) gow3gpu_note_fatal_fault();
+    fflush(NULL);
+    TerminateProcess(GetCurrentProcess(),3);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+/* Data watchpoints (diagnostics): tools/watch_write.py arms DR0-DR3 on the guest threads; each hit
+ * is logged with the guest offset of the writing code (trap: RIP is after the store) and guest
+ * return addresses near the stack top, then execution continues. */
+/* Up to 63 printable bytes at a guest pointer (diagnostics; never faults). */
+static void watch_string(char *out, size_t size, uint64_t address) {
+    unsigned char buf[64]={0}; SIZE_T got=0;
+    out[0]=0;
+    if (address<0x10000 || !ReadProcessMemory(GetCurrentProcess(),(LPCVOID)(uintptr_t)address,buf,sizeof(buf)-1,&got)) return;
+    size_t n=0;
+    while (n<got && n+1<size && buf[n]>=0x20 && buf[n]<0x7f) { out[n]=(char)buf[n]; ++n; }
+    out[n]=0;
+}
+static volatile LONG watch_hits;
+static LONG watch_hit(EXCEPTION_POINTERS *info) {
+#define hits watch_hits
+    CONTEXT *c=info->ContextRecord;
+    DWORD64 dr6=c->Dr6;
+    c->Dr6=0;
+    /* Instruction breakpoints (GOW3_EXEC_WATCH) fault before the instruction: resume past them. */
+    c->EFlags|=0x10000;
+    /* Only guest code is logged: runtime copies of the watched memory would fill the 400 lines. */
+    if (image && c->Rip-(uintptr_t)image<0x2000000 && InterlockedIncrement(&hits)<=400) {
+        char line[1024], s1[64], s2[64];
+        watch_string(s1,sizeof(s1),c->Rsi); watch_string(s2,sizeof(s2),c->Rdx);
+        int n=snprintf(line,sizeof(line),"Watch: dr6 %#llx rip guest %#llx rax %#llx rcx %#llx rdx %#llx rsi %#llx rdi %#llx r8 %#llx r9 %#llx [rsi '%s'] [rdx '%s'] callers",
+                       (unsigned long long)dr6,(unsigned long long)(c->Rip-(uintptr_t)image),(unsigned long long)c->Rax,
+                       (unsigned long long)c->Rcx,(unsigned long long)c->Rdx,(unsigned long long)c->Rsi,(unsigned long long)c->Rdi,
+                       (unsigned long long)c->R8,(unsigned long long)c->R9,s1,s2);
+        const uint64_t *stack=(const uint64_t *)(uintptr_t)c->Rsp;
+        for (int i=0,found=0;i<64 && found<6 && n<(int)sizeof(line)-24;++i) {
+            uint64_t v=stack[i];
+            if (v-(uintptr_t)image<0x2000000) { n+=snprintf(line+n,sizeof(line)-n," %#llx",(unsigned long long)(v-(uintptr_t)image)); ++found; }
+        }
+        puts(line); fflush(stdout);
+    }
+    return EXCEPTION_CONTINUE_EXECUTION;
+#undef hits
+}
+/* GOW3_EXEC_WATCH=<off>[,<off>...] (hex guest image offsets, up to 4): instruction breakpoints
+ * on every thread of the process (GOW3_EXEC_WATCH_SECONDS, default 600 s); a helper arms threads as they
+ * appear (the guest main thread before guest code starts). Hits are logged by watch_hit. */
+static uint64_t exec_watch[4];
+static int exec_watch_count;
+static HANDLE exec_watch_ready;
+static DWORD exec_watch_armed[8192];
+static volatile LONG exec_watch_armed_count;
+/* Diagnostics: points data watch 0 at `address` (8-byte writes) and re-arms every thread
+ * (needs GOW3_EXEC_WATCH set at start, e.g. w:0). Called by the GPU library's checks. */
+void runtime_exec_watch_retarget(uint64_t address) {
+    exec_watch[0]=address|(1ull<<63);
+    if (exec_watch_count<1) exec_watch_count=1;
+    InterlockedExchange(&exec_watch_armed_count,0);
+    printf("Exec watch: data watch moved to %#llx\n",(unsigned long long)address);
+    fflush(stdout);
+}
+static const char *exec_watch_file;
+static void poll_exec_watch_file(void);
+static DWORD WINAPI exec_watch_thread(LPVOID unused) {
+    (void)unused;
+    DWORD *armed=exec_watch_armed;
+    DWORD self=GetCurrentThreadId(), pid=GetCurrentProcessId();
+    ULONGLONG start=GetTickCount64();
+    const char *secs=getenv("GOW3_EXEC_WATCH_SECONDS");
+    const ULONGLONG limit=(secs && atoi(secs)>0 ? (ULONGLONG)atoi(secs) : 600)*1000;
+    for (int round=0; exec_watch_file || GetTickCount64()-start<limit; ++round) {
+        if (round%50==0) poll_exec_watch_file();
+        HANDLE snap=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
+        if (snap!=INVALID_HANDLE_VALUE) {
+            THREADENTRY32 te={.dwSize=sizeof(te)};
+            for (BOOL ok=Thread32First(snap,&te); ok; ok=Thread32Next(snap,&te)) {
+                if (te.th32OwnerProcessID!=pid || te.th32ThreadID==self) continue;
+                int known=0;
+                const LONG armed_count=exec_watch_armed_count;
+                for (int i=0;i<armed_count;++i) if (armed[i]==te.th32ThreadID) { known=1; break; }
+                if (known || armed_count==8192) continue;
+                HANDLE t=OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_SET_CONTEXT,FALSE,te.th32ThreadID);
+                if (!t) continue;
+                if (SuspendThread(t)!=(DWORD)-1) {
+                    CONTEXT ctx={.ContextFlags=CONTEXT_DEBUG_REGISTERS};
+                    if (GetThreadContext(t,&ctx)) {
+                        DWORD64 *dr[4]={&ctx.Dr0,&ctx.Dr1,&ctx.Dr2,&ctx.Dr3};
+                        ctx.Dr7=0;
+                        for (int i=0;i<exec_watch_count;++i) {
+                            /* Bit 63 marks a data watch (w:<absolute address>): 8-byte writes. */
+                            if ((exec_watch[i]>>62)==1) {
+                                *dr[i]=(DWORD64)(exec_watch[i]&~(3ull<<62)&~3ull);
+                                ctx.Dr7|=(1ull<<(2*i))|(3ull<<(16+4*i))|(3ull<<(18+4*i));
+                            } else if (exec_watch[i]>>63) {
+                                *dr[i]=(DWORD64)(exec_watch[i]&~(1ull<<63)&~7ull);
+                                ctx.Dr7|=(1ull<<(2*i))|(1ull<<(16+4*i))|(2ull<<(18+4*i));
+                            } else {
+                                *dr[i]=(DWORD64)(uintptr_t)(image+exec_watch[i]);
+                                ctx.Dr7|=1ull<<(2*i);
+                            }
+                        }
+                        if (SetThreadContext(t,&ctx)) armed[InterlockedIncrement(&exec_watch_armed_count)-1]=te.th32ThreadID;
+                    }
+                    ResumeThread(t);
+                }
+                CloseHandle(t);
+            }
+            CloseHandle(snap);
+        }
+        if (round==0) SetEvent(exec_watch_ready);
+        Sleep(round<200 ? 1 : 20);
+    }
+    printf("Exec watch: done (%ld threads armed)\n",(long)exec_watch_armed_count);
+    return 0;
+}
+/* Bit 62 marks a 4-byte read/write data watch (r:<absolute address>). */
+static int parse_exec_watch(const char *text, uint64_t out[4]) {
+    int count=0;
+    for (const char *p=text; *p && count<4;) {
+        while (*p==' ' || *p=='\n' || *p=='\r') ++p;
+        int data=0, read=0;
+        if ((p[0]=='w' || p[0]=='W') && p[1]==':') { data=1; p+=2; }
+        else if ((p[0]=='r' || p[0]=='R') && p[1]==':') { read=1; p+=2; }
+        char *end=NULL;
+        uint64_t v=strtoull(p,&end,16);
+        if (end==p) break;
+        out[count++]=data ? v|(1ull<<63) : read ? v|(1ull<<62) : v;
+        p=*end==',' ? end+1 : end;
+    }
+    return count;
+}
+/* GOW3_EXEC_WATCH_FILE=<path>: the watch list (same syntax, plus r:<address>) is read from the
+ * file every second while the game runs; a changed list re-arms every thread (diagnostics: data
+ * watches on heap addresses found at runtime). */
+static const char *exec_watch_file;
+static char exec_watch_file_text[256];
+static void poll_exec_watch_file(void) {
+    if (!exec_watch_file) return;
+    FILE *f=fopen(exec_watch_file,"rb");
+    if (!f) return;
+    char text[256]={0};
+    size_t n=fread(text,1,sizeof(text)-1,f);
+    fclose(f);
+    text[n]=0;
+    if (!strcmp(text,exec_watch_file_text)) return;
+    strcpy(exec_watch_file_text,text);
+    uint64_t list[4]={0};
+    const int count=parse_exec_watch(text,list);
+    for (int i=0;i<4;++i) exec_watch[i]=list[i];
+    exec_watch_count=count;
+    InterlockedExchange(&watch_hits,0);
+    InterlockedExchange(&exec_watch_armed_count,0);
+    printf("Exec watch: %d watches from %s: %s\n",count,exec_watch_file,text);
+    fflush(stdout);
+}
+/* GOW3_POKE=<entry>[,<entry>...]: bytes the runtime keeps set in guest memory, rewritten every
+ * 250 ms (launcher cheats: the games' own debug-menu switches, tools/probe_uncharted.py CHEATS).
+ * An entry is <offset>[=<value>] (hex guest image offset, value 1 by default) or
+ * *<offset>+<add>[=<value>] (the byte <add> past the pointer stored at <offset>). Reads and
+ * writes go through Read/WriteProcessMemory: an address not mapped (yet) is skipped. */
+typedef struct { int deref; uint64_t offset, add; unsigned char value; } Poke;
+static Poke pokes[16];
+static int poke_count;
+static DWORD WINAPI poke_thread(LPVOID unused) {
+    (void)unused;
+    const HANDLE self=GetCurrentProcess();
+    for (;;) {
+        for (int i=0;i<poke_count;++i) {
+            uintptr_t address=(uintptr_t)image+(uintptr_t)pokes[i].offset;
+            SIZE_T got=0;
+            if (pokes[i].deref) {
+                uint64_t pointer=0;
+                if (!ReadProcessMemory(self,(LPCVOID)address,&pointer,sizeof(pointer),&got) || got!=sizeof(pointer) || !pointer) continue;
+                address=(uintptr_t)pointer+(uintptr_t)pokes[i].add;
+            }
+            unsigned char current=0;
+            if (ReadProcessMemory(self,(LPCVOID)address,&current,1,&got) && got==1 && current!=pokes[i].value)
+                WriteProcessMemory(self,(LPVOID)address,&pokes[i].value,1,NULL);
+        }
+        Sleep(250);
+    }
+    return 0;
+}
+static void start_pokes(void) {
+    const char *env=getenv("GOW3_POKE");
+    if (!env || !*env || !image) return;
+    const char *p=env;
+    while (*p && poke_count<16) {
+        Poke k={0};
+        char *end;
+        if (*p=='*') { k.deref=1; ++p; }
+        k.offset=strtoull(p,&end,16);
+        p=end;
+        if (k.deref && *p=='+') { k.add=strtoull(p+1,&end,16); p=end; }
+        k.value=1;
+        if (*p=='=') { k.value=(unsigned char)strtoul(p+1,&end,16); p=end; }
+        pokes[poke_count++]=k;
+        while (*p && *p!=',') ++p;
+        if (*p==',') ++p;
+    }
+    printf("Runtime: %d memory switches kept set (GOW3_POKE: %s)\n",poke_count,env);
+    CloseHandle(CreateThread(NULL,0,poke_thread,NULL,0,NULL));
+}
+static void start_exec_watch(void) {
+    const char *env=getenv("GOW3_EXEC_WATCH");
+    exec_watch_file=getenv("GOW3_EXEC_WATCH_FILE");
+    if ((!env || !*env) && !exec_watch_file) return;
+    if (env) exec_watch_count=parse_exec_watch(env,exec_watch);
+    exec_watch_ready=CreateEventA(NULL,TRUE,FALSE,NULL);
+    CloseHandle(CreateThread(NULL,0,exec_watch_thread,NULL,0,NULL));
+    WaitForSingleObject(exec_watch_ready,5000);
+    printf("Exec watch: %d breakpoints armed from %s\n",exec_watch_count,env ? env : "(file)");
+}
+/* GitHub #22 (18 Oct 2026, Windows 10 19041, all three games at start): the games run their job
+ * code on PS4 fibers whose stacks lie in guest memory (gow3_fiber.cpp), outside the stack the
+ * thread's TEB names. Resuming from any exception there, ntdll's RtlGuardRestoreContext ended the
+ * process (FAST_FAIL_INVALID_SET_OF_CONTEXT: the context's rsp outside the TEB stack). The TEB now
+ * names the stack the thread is on before an exception is handled: the guest allocation holding
+ * rsp, or the thread's own stack again once it is back there. */
+int runtime_memory_region(uintptr_t address, uintptr_t *start, uintptr_t *end, int *mapped);
+static void cover_current_stack(const CONTEXT *context) {
+    NT_TIB *tib=(NT_TIB *)NtCurrentTeb();
+    const uintptr_t sp=(uintptr_t)context->Rsp;
+    if (sp>=(uintptr_t)tib->StackLimit && sp<(uintptr_t)tib->StackBase) return;
+    static _Thread_local uintptr_t own_limit, own_base;
+    if (!own_base) { own_limit=(uintptr_t)tib->StackLimit; own_base=(uintptr_t)tib->StackBase; }
+    if (sp>=own_limit && sp<own_base) {
+        tib->StackLimit=(PVOID)own_limit; tib->StackBase=(PVOID)own_base;
+        return;
+    }
+    /* gow3 19 Oct 2026: a stack in guest memory is bounded by its guest mapping. runtime_memory.c
+     * maps large ranges as several views of at most 2 MiB, so a Windows allocation no longer spans
+     * a mapping: limits taken from it cut fiber stacks that cross a view, and Uncharted 3 stopped
+     * at start ("fiber stack overflow"). Other stacks: their Windows allocation, as before. */
+    uintptr_t guest_start, guest_end;
+    int guest_mapped;
+    if (sp>=UINT64_C(0x1000000000) && sp<UINT64_C(0xfc00000000) &&
+        runtime_memory_region(sp,&guest_start,&guest_end,&guest_mapped) && guest_mapped &&
+        guest_start<=sp && sp<guest_end) {
+        tib->StackLimit=(PVOID)guest_start; tib->StackBase=(PVOID)guest_end;
+        return;
+    }
+    MEMORY_BASIC_INFORMATION region;
+    if (!VirtualQuery((LPCVOID)sp,&region,sizeof(region)) || region.State!=MEM_COMMIT) return;
+    uintptr_t low=(uintptr_t)region.AllocationBase, high=(uintptr_t)region.BaseAddress+region.RegionSize;
+    /* The rest of the allocation above rsp (protection changes split it into regions). */
+    for (int i=0;i<256;++i) {
+        MEMORY_BASIC_INFORMATION next;
+        if (!VirtualQuery((LPCVOID)high,&next,sizeof(next)) || next.AllocationBase!=region.AllocationBase) break;
+        high=(uintptr_t)next.BaseAddress+next.RegionSize;
+    }
+    tib->StackLimit=(PVOID)low; tib->StackBase=(PVOID)high;
+}
+static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
+    const EXCEPTION_RECORD *record=info->ExceptionRecord;
+    DWORD code=record->ExceptionCode;
+    if (code==EXCEPTION_STACK_OVERFLOW) {
+        /* gow3 1 Nov 2026: a stack overflow leaves almost no stack for the report below (the
+         * 2 GB card simulation died silently). First a few fixed lines written with no stack use:
+         * thread id, rip, rsp and the thread's stack bounds (TEB). */
+        static char line[160];
+        static const char hex[]="0123456789abcdef";
+        const NT_TIB *tib=(const NT_TIB *)NtCurrentTeb();
+        const unsigned long long values[5]={GetCurrentThreadId(),info->ContextRecord->Rip,info->ContextRecord->Rsp,
+                                            (unsigned long long)(uintptr_t)tib->StackBase,(unsigned long long)(uintptr_t)tib->StackLimit};
+        static const char *const names[5]={"STACK OVERFLOW thread ","  rip ","  rsp ","  stack base ","  limit "};
+        int n=0;
+        for (int v=0;v<5;++v) {
+            for (const char *s=names[v];*s;) line[n++]=*s++;
+            for (int shift=60;shift>=0;shift-=4) line[n++]=hex[(values[v]>>shift)&15];
+        }
+        line[n++]='\n';
+        DWORD written=0;
+        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),line,(DWORD)n,&written,NULL);
+        WriteFile(GetStdHandle(STD_ERROR_HANDLE),line,(DWORD)n,&written,NULL);
+    }
+    cover_current_stack(info->ContextRecord);
+    /* gow3 1 Nov 2026: an instruction this CPU lacks (runtime_isa.c). */
+    if (code==EXCEPTION_ILLEGAL_INSTRUCTION && runtime_isa_emulate(info->ContextRecord)) return EXCEPTION_CONTINUE_EXECUTION;
+    if (code==EXCEPTION_SINGLE_STEP && (info->ContextRecord->Dr6&0xf)) return watch_hit(info);
+    if (code==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2) {
+        /* GOW3_FAULT_TRACE=1: the first 64 access violations (diagnostics), written directly so
+         * that a fault the process doesn't survive still shows: kind, address, instruction. */
+        static int trace=-1;
+        if (trace<0) { const char *env=getenv("GOW3_FAULT_TRACE"); trace=env && env[0]=='1' ? 64 : 0; }
+        if (trace>0) {
+            --trace;
+            char line[256];
+            uintptr_t rip=(uintptr_t)info->ContextRecord->Rip;
+            HMODULE module=NULL; char name[MAX_PATH]="?";
+            if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCSTR)rip,&module))
+                GetModuleFileNameA(module,name,sizeof(name));
+            const char *base=strrchr(name,'\\');
+            int n=snprintf(line,sizeof(line),"AV %s %p rip %p (%s+%#llx, guest %#llx) thread %lu\n",
+                           record->ExceptionInformation[0]==1 ? "write" : record->ExceptionInformation[0]==8 ? "exec" : "read",
+                           (void *)record->ExceptionInformation[1],(void *)rip,base ? base+1 : name,
+                           module ? (unsigned long long)(rip-(uintptr_t)module) : 0ULL,
+                           image && rip-(uintptr_t)image<0x20000000 ? (unsigned long long)(rip-(uintptr_t)image) : 0ULL,
+                           GetCurrentThreadId());
+            DWORD written; WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),line,(DWORD)n,&written,NULL);
+        }
+        /* GPU page tracking (write-protected guest pages) is resolved first, except during a
+         * speculative read (draw preparation workers): resolving a GPU-modified page there waits
+         * for the GPU thread, which may be waiting for a lock that worker holds (Uncharted 2
+         * level load). Such a fault takes the recovery path; the GPU thread does that draw. */
+        if (gpu_enabled && !runtime_fault_recover) {
+            /* A fault inside the GPU fault handlers is legitimate a level or two deep (a handler
+             * touching another tracked page). A bug there recursed until the thread's stack ran
+             * out and the game froze for good (18 Oct 2026, Uncharted 3: the page table indexed
+             * with a garbage address, thousands of levels). Deeper than 8: a report, and stop. */
+            static _Thread_local int handler_depth;
+            if (handler_depth>=8) {
+                fprintf(stderr,"Fault handler: faulted inside itself %d levels deep\n",handler_depth);
+                return fatal_exception(info);
+            }
+            ++handler_depth;
+            const int handled=gow3gpu_handle_fault(info,(void *)record->ExceptionInformation[1]);
+            --handler_depth;
+            if (handled) {
+                /* GOW3_RED_ZONE_SCRIBBLE=1 (test): the red zone overwritten as Windows may do. */
+                runtime_redzone_after_fault(info->ContextRecord);
+                return EXCEPTION_CONTINUE_EXECUTION;
+            }
+        }
+        if (runtime_fault_recover) {
+            /* A speculative guest memory read (GPU draw preparation) faulted: the thread resumes
+             * in gow3_longjmp, outside the exception dispatcher, back at its recovery point. */
+            unsigned long long *buffer=*runtime_fault_recover;
+            runtime_fault_recover=NULL;
+            CONTEXT *c=info->ContextRecord;
+            c->Rsp=((c->Rsp-128)&~(DWORD64)15)-40;
+            c->Rcx=(DWORD64)(uintptr_t)buffer;
+            c->Rdx=1;
+            c->Rip=(DWORD64)(uintptr_t)gow3_longjmp;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
+    if (code==EXCEPTION_ACCESS_VIOLATION || code==EXCEPTION_ILLEGAL_INSTRUCTION || code==EXCEPTION_PRIV_INSTRUCTION ||
+        code==EXCEPTION_STACK_OVERFLOW || code==EXCEPTION_INT_DIVIDE_BY_ZERO || code==EXCEPTION_DATATYPE_MISALIGNMENT) {
+        /* Faults in guest code, the loader or the runtime end the process with a report; drivers
+         * and system libraries may handle their own exceptions. */
+        uintptr_t rip=(uintptr_t)info->ContextRecord->Rip;
+        HMODULE self=GetModuleHandleA(NULL), module=NULL;
+        int ours=(image && rip-(uintptr_t)image<0x20000000) ||
+                 (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCSTR)rip,&module) && module==self) ||
+                 !module;
+        if (ours) return fatal_exception(info);
+    }
+    /* GOW3_STRICT_HANDLES=1: a closed or invalid handle used anywhere is reported (diagnostics). */
+    if (code==0xC0000008 /* STATUS_INVALID_HANDLE */) return fatal_exception(info);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+static LONG WINAPI unhandled_fault(EXCEPTION_POINTERS *info) { return fatal_exception(info); }
+/* Guest code reads its TCB with `mov rax, gs:[0]` (link_*.py rewrote fs:[0]); on Windows
+ * the displacement becomes the TEB TLS slot that holds the guest TCB (runtime_thread.c). */
+uint32_t runtime_thread_tcb_offset(void);
+static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
+    static const unsigned char load[]={0x65,0x48,0x8b,0x04,0x25,0,0,0,0};
+    uint32_t displacement=runtime_thread_tcb_offset();
+    uint64_t patched=0;
+    for (uint64_t s=0;s<count;++s) {
+        if (!(segments[s].flags&1) || segments[s].size<sizeof(load)) continue;
+        unsigned char *at=image+segments[s].address, *end=at+segments[s].size-sizeof(load);
+        for (; at<=end; ++at)
+            if (at[0]==0x65 && !memcmp(at,load,sizeof(load))) { memcpy(at+5,&displacement,4); ++patched; at+=sizeof(load)-1; }
+    }
+    return patched;
+}
+#endif
+#ifndef _WIN32
+static void fault(int sig, siginfo_t *info, void *context) {
+    /* GPU page tracking (write-protected guest pages) is resolved first, except during a
+     * speculative read: see vectored_fault. */
+    if (gpu_enabled && sig == SIGSEGV && !runtime_fault_recover && gow3gpu_handle_fault(context, info->si_addr)) return;
+    /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
+    if ((sig == SIGSEGV || sig == SIGBUS) && runtime_fault_recover) {
+        sigjmp_buf *recover = runtime_fault_recover;
+        runtime_fault_recover = NULL;
+        sigset_t unblock;
+        sigemptyset(&unblock);
+        sigaddset(&unblock, sig);
+        pthread_sigmask(SIG_UNBLOCK, &unblock, NULL);
+        siglongjmp(*recover, 1);
+    }
+    /* The process is terminating: dladdr/snprintf are acceptable here. */
+    ucontext_t *uc = context;
+    uintptr_t rip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
+    char line[512];
+    Dl_info where;
+    if (rip - (uintptr_t)image < 0x10000000)
+        snprintf(line, sizeof(line), "Guest fault (signal %d) at guest offset 0x%lx, address %p\n",
+                 sig, (unsigned long)(rip - (uintptr_t)image), info->si_addr);
+    else if (dladdr((void *)rip, &where) && where.dli_fname)
+        snprintf(line, sizeof(line), "Host fault (signal %d) in %s+0x%lx (%s), address %p\n", sig, where.dli_fname,
+                 (unsigned long)(rip - (uintptr_t)where.dli_fbase), where.dli_sname ? where.dli_sname : "?", info->si_addr);
+    else
+        snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
+    { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
+    if (gpu_enabled) gow3gpu_dump_guest_writes(context);
+    /* Host call chain (frames with unwind info; guest frames end it). */
+    void *frames[32];
+    int depth = backtrace(frames, 32);
+    for (int i = 2; i < depth; ++i) {
+        if (dladdr(frames[i], &where) && where.dli_fname)
+            snprintf(line, sizeof(line), "  #%d %s+0x%lx (%s)\n", i, where.dli_fname,
+                     (unsigned long)((uintptr_t)frames[i] - (uintptr_t)where.dli_fbase), where.dli_sname ? where.dli_sname : "?");
+        else
+            snprintf(line, sizeof(line), "  #%d %p\n", i, frames[i]);
+        ssize_t written_=write(2, line, strlen(line)); (void)written_;
+    }
+    _exit(128 + sig);
+}
+#endif
+#ifndef _WIN32
+/* Watchdog: dump RIP and the rbp frame chain of every thread (guest offsets
+ * when inside the image). Reads use process_vm_readv so bad frames cannot fault. */
+static uintptr_t exe_base;
+static void write_hex(char *out, uint64_t v) {
+    const char digits[] = "0123456789abcdef";
+    for (int i = 0; i < 16; ++i) out[i] = digits[(v >> (60 - i * 4)) & 15];
+}
+static void dump_frames(ucontext_t *uc) {
+    char line[] = "  tid=0000000000000000 rip=0000000000000000 image-relative=0000000000000000 host-relative=0000000000000000\n";
+    uintptr_t rip=(uintptr_t)uc->uc_mcontext.gregs[REG_RIP], rbp=(uintptr_t)uc->uc_mcontext.gregs[REG_RBP];
+    uint64_t tid=(uint64_t)gettid();
+    /* First argument register: the lock address when a thread waits on a futex. */
+    char arg[]="  tid=0000000000000000 rdi=0000000000000000\n";
+    write_hex(arg+6,tid); write_hex(arg+27,(uint64_t)uc->uc_mcontext.gregs[REG_RDI]);
+    { ssize_t written_=write(2,arg,sizeof(arg)-1); (void)written_; }
+    for (int depth=0; depth<24; ++depth) {
+        write_hex(line+6,tid); write_hex(line+27,rip); write_hex(line+59,rip-(uintptr_t)image); write_hex(line+90,rip-exe_base);
+        { ssize_t written_=write(2,line,sizeof(line)-1); (void)written_; }
+        uintptr_t frame[2];
+        struct iovec local={frame,sizeof(frame)}, remote={(void *)rbp,sizeof(frame)};
+        if (!rbp || process_vm_readv(getpid(),&local,1,&remote,1,0)!=(ssize_t)sizeof(frame)) break;
+        if (frame[0]<=rbp) break;
+        rbp=frame[0]; rip=frame[1];
+    }
+}
+static void thread_dump(int sig, siginfo_t *info, void *context) { (void)sig; (void)info; dump_frames(context); }
+static void watchdog(int sig, siginfo_t *info, void *context) {
+    (void)info;
+    const char head[]="STOP: watchdog timeout; thread stacks:\n";
+    { ssize_t written_=write(2,head,sizeof(head)-1); (void)written_; }
+    dump_frames(context);
+    int dir=open("/proc/self/task",O_RDONLY|O_DIRECTORY);
+    char buffer[4096];
+    long n;
+    pid_t self=gettid();
+    while (dir>=0 && (n=syscall(SYS_getdents64,dir,buffer,sizeof(buffer)))>0)
+        for (long at=0; at<n;) {
+            struct { uint64_t ino; int64_t off; unsigned short reclen; unsigned char type; char name[]; } *d=(void *)(buffer+at);
+            pid_t tid=(pid_t)strtol(d->name,NULL,10);
+            if (tid>0 && tid!=self) { syscall(SYS_tgkill,getpid(),tid,SIGUSR2); usleep(20000); }
+            at+=d->reclen;
+        }
+    usleep(100000);
+    _exit(128 + sig);
+}
+#endif
+/* param.sfo lookup: string or integer value of key, 0 when absent. */
+static int sfo_value(const char *path, const char *key, char *text, size_t text_size, uint32_t *number) {
+    FILE *f=fopen(path,"rb");
+    if (!f) return 0;
+    unsigned char data[65536];
+    size_t n=fread(data,1,sizeof(data),f); fclose(f);
+    if (n<20 || memcmp(data,"\0PSF",4)) return 0;
+    uint32_t keys, values, count;
+    memcpy(&keys,data+8,4); memcpy(&values,data+12,4); memcpy(&count,data+16,4);
+    for (uint32_t i=0;i<count && 20+i*16+16<=n;++i) {
+        const unsigned char *e=data+20+i*16;
+        uint16_t key_offset, format; uint32_t length, offset;
+        memcpy(&key_offset,e,2); memcpy(&format,e+2,2); memcpy(&length,e+4,4); memcpy(&offset,e+12,4);
+        if (keys+key_offset>=n || values+offset+length>n || strcmp((const char *)data+keys+key_offset,key)) continue;
+        if (format==0x0404 && number && length>=4) { memcpy(number,data+values+offset,4); return 1; }
+        if (text && text_size) {
+            size_t copy=length<text_size-1 ? length : text_size-1;
+            memcpy(text,data+values+offset,copy); text[copy]=0;
+        }
+        return 1;
+    }
+    return 0;
+}
+static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t bytes) {
+    for (uint64_t i = 0; i < count; ++i)
+        if (address >= segments[i].address && bytes <= segments[i].size &&
+            address - segments[i].address <= segments[i].size - bytes) return 1;
+    return 0;
+}
+#include "uc2mp_menu_bridge.h"
+extern ABI float gow3_orbs_gain(void *player, float requested);
+extern void gow3_orbs_status(int supported);
+extern uintptr_t gow3_cheat_flag(unsigned id);
+extern uintptr_t gow3_actor_slots_address(void);
+extern void gow3_actor_status(int supported);
+extern void gow3_cheat_status(unsigned id);
+extern uintptr_t gow3_damage_multiplier(int taken);
+extern uintptr_t gow3_orb_pickup_multiplier(unsigned kind);
+extern void gow3_stat_multipliers_status(int damage, int orb_pickup);
+
+/* The hooks below find their sites by signature (src/signature.h), so they work in any region
+ * and version of the game whose code matches; a site that is not found leaves its feature off. */
+static void install_cheats(Segment *segments, uint64_t count, uint64_t size) {
+    const char *names[] = {"health", "magic", "item meter", "Rage of Sparta", "red orbs",
+                           "Very Hard unlock", "infinite double jumps"};
+    uint64_t at[GOW3_CHEAT_HOOK_COUNT];
+    for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i)
+        at[i] = gow3_signature_find(image, size, &gow3_cheat_hooks[i].site);
+    for (unsigned id = 0; id < GOW3_CHEAT_COUNT; ++id) {
+        int valid = 1;
+        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
+            if (hook->id != id) continue;
+            if (at[i] == UINT64_MAX || !mapped(segments, count, at[i], hook->length) ||
+                !gow3_cheat_signature_match(hook, image + at[i], size - at[i])) valid = 0;
+        }
+        if (!valid) {
+            printf("Cheats: %s unavailable (code not found in this eboot.bin)\n", names[id]);
+            continue;
+        }
+        unsigned char *stubs = allocate(page_size);
+        int32_t relative[GOW3_CHEAT_HOOK_COUNT] = {0};
+        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
+            if (hook->id != id) continue;
+            unsigned char *stub = stubs + i * 256;
+            int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at[i] + 5);
+            if (delta < INT32_MIN || delta > INT32_MAX) { valid = 0; break; }
+            relative[i] = (int32_t)delta;
+            gow3_cheat_build_stub(stub, hook, gow3_cheat_flag(id),
+                                 (uintptr_t)(image + at[i] + hook->length));
+        }
+        if (!valid) {
+            printf("Cheats: %s unavailable (hook outside relative-jump range)\n", names[id]);
+            continue;
+        }
+        protect(stubs, page_size, 5);
+        for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
+            const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
+            if (hook->id != id) continue;
+            image[at[i]] = 0xe9;
+            memcpy(image + at[i] + 1, &relative[i], 4);
+            memset(image + at[i] + 5, 0x90, hook->length - 5);
+        }
+        gow3_cheat_status(id);
+        printf("Cheats: %s ready (live toggle, initially disabled unless saved)\n", names[id]);
+    }
+}
+
+/* Damage hook for the enemy health bar (src/actor_hook.h). Always
+ * installed when the code matches: it only records values; the overlay decides what to show. */
+static void install_actor_watch(Segment *segments, uint64_t count, uint64_t size) {
+    const uint64_t at = gow3_signature_find(image, size, &gow3_actor_site);
+    if (at == UINT64_MAX || !mapped(segments, count, at, GOW3_ACTOR_HOOK_LENGTH) ||
+        !gow3_actor_signature_match(image + at, size - at)) {
+        printf("Health display: unavailable (code not found in this eboot.bin)\n");
+        return;
+    }
+    unsigned char *stub = allocate(page_size);
+    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at + 5);
+    if (delta < INT32_MIN || delta > INT32_MAX) {
+        printf("Health display: unavailable (hook outside relative-jump range)\n");
+        return;
+    }
+    gow3_actor_build_stub(stub, gow3_actor_slots_address(), (uintptr_t)(image + at + GOW3_ACTOR_HOOK_LENGTH));
+    protect(stub, page_size, 5);
+    const int32_t relative = (int32_t)delta;
+    image[at] = 0xe9;
+    memcpy(image + at + 1, &relative, 4);
+    memset(image + at + 5, 0x90, GOW3_ACTOR_HOOK_LENGTH - 5);
+    gow3_actor_status(1);
+    printf("Health display: damage hook ready (enemy health bar in the menu)\n");
+}
+
+static void install_orb_multiplier(Segment *segments, uint64_t count, uint64_t size) {
+    uint64_t calls[3];
+    const uint64_t setter_at = gow3_orb_find(image, size, calls);
+    if (setter_at == UINT64_MAX) {
+        printf("Red orbs: multiplier unavailable (code not found in this eboot.bin)\n");
+        return;
+    }
+    for (unsigned i = 0; i < 3; ++i) {
+        if (!mapped(segments, count, calls[i], 5)) return;
+    }
+    /* SysV call sites: preserve the receiver across the helper, then tail-call the original
+     * setter. Its cap and upgrade notifications remain in the game's own code. */
+    unsigned char *stub = allocate(page_size);
+    uintptr_t helper = (uintptr_t)gow3_orbs_gain, setter = (uintptr_t)(image + setter_at);
+    unsigned char code[26];
+    gow3_orb_build_stub(code, helper, setter);
+    int32_t displacements[3];
+    for (unsigned i = 0; i < 3; ++i) {
+        int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + calls[i] + 5);
+        if (delta < INT32_MIN || delta > INT32_MAX) {
+            printf("Red orbs: multiplier unavailable (hook outside relative-call range)\n");
+            return;
+        }
+        displacements[i] = (int32_t)delta;
+    }
+    memcpy(stub, code, sizeof(code));
+    protect(stub, page_size, 5);
+    for (unsigned i = 0; i < 3; ++i)
+        memcpy(image + calls[i] + 1, &displacements[i], 4);
+    gow3_orbs_status(1);
+    printf("Red orbs: live multiplier ready (3 validated gain paths, 0.1x to 100x)\n");
+}
+/* Writes a jump from image+at to `stub`; the rest of the replaced bytes become nops (the stub
+ * replays them). 0 when the stub is out of relative-jump range. */
+static int install_jump(uint64_t at, unsigned length, unsigned char *stub) {
+    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at + 5);
+    if (delta < INT32_MIN || delta > INT32_MAX) return 0;
+    const int32_t relative = (int32_t)delta;
+    image[at] = 0xe9;
+    memcpy(image + at + 1, &relative, 4);
+    memset(image + at + 5, 0x90, length - 5);
+    return 1;
+}
+
+/* gow3 1 Nov 2026: stub space for runtime_isa.c (the old-CPU instruction stubs, 64 KiB chunks)
+ * within relative-jump range of the image, from the free space around it. */
+unsigned char *runtime_near_image_alloc(size_t bytes, int executable) {
+#ifdef _WIN32
+    bytes = (bytes + 0xffff) & ~(size_t)0xffff;
+    const uintptr_t lo = (uintptr_t)image > UINT64_C(0x60000000) ? (uintptr_t)image - UINT64_C(0x60000000) : 0x10000;
+    const uintptr_t hi = (uintptr_t)image + UINT64_C(0x60000000);
+    MEMORY_BASIC_INFORMATION info;
+    for (uintptr_t address = lo; address < hi && VirtualQuery((void *)address, &info, sizeof(info));
+         address = (uintptr_t)info.BaseAddress + info.RegionSize) {
+        if (info.State != MEM_FREE) continue;
+        const uintptr_t start = ((uintptr_t)info.BaseAddress + 0xffff) & ~(uintptr_t)0xffff;
+        if (start + bytes > (uintptr_t)info.BaseAddress + info.RegionSize || start + bytes > hi) continue;
+        void *p = VirtualAlloc((void *)start, bytes, MEM_RESERVE | MEM_COMMIT,
+                               executable ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+        if (p) return p;
+    }
+    return NULL;
+#else
+    (void)bytes; (void)executable;
+    return NULL;
+#endif
+}
+
+/* A page for hook stubs within relative-jump range of the image (the image sits below 2 GiB with
+ * --low-image; a page anywhere may be out of range). */
+static unsigned char *allocate_near_image(uint64_t size) {
+#ifdef _WIN32
+    /* Free regions within +-1.5 GiB of the image (below it too: the linked modules and runtime
+     * reservations can fill the space right above it). */
+    const uintptr_t lo = (uintptr_t)image > UINT64_C(0x60000000) ? (uintptr_t)image - UINT64_C(0x60000000) : 0x10000;
+    const uintptr_t hi = (uintptr_t)image + (uintptr_t)size + UINT64_C(0x60000000);
+    MEMORY_BASIC_INFORMATION info;
+    for (uintptr_t address = lo; address < hi && VirtualQuery((void *)address, &info, sizeof(info));
+         address = (uintptr_t)info.BaseAddress + info.RegionSize) {
+        if (info.State != MEM_FREE) continue;
+        const uintptr_t start = ((uintptr_t)info.BaseAddress + 0xffff) & ~(uintptr_t)0xffff;
+        if (start + page_size > (uintptr_t)info.BaseAddress + info.RegionSize) continue;
+        void *p = VirtualAlloc((void *)start, page_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (p) return p;
+    }
+    return NULL;
+#else
+    (void)size;
+    return allocate(page_size);
+#endif
+}
+#include "uc2mp_spawn_bridge.h"
+#include "uc2mp_game_frame_bridge.h"
+#include "uc2mp_text_bridge.h"
+#include "uc2mp_match_info.h"
+
+/* uc2mp: the overlay's multiplayer loading screen while a match map loads, hidden once the
+ * hero exists. The map picture comes from the first UNCHARTED_MOD_DIR folder. */
+static void uc2mp_hide_match_loading(void) {
+    gow3gpu_match_loading(0, NULL, NULL, NULL, NULL);
+}
+static void uc2mp_show_match_loading(const char *map) {
+    Uc2mpMatchInfo info;
+    uc2mp_match_info_read(map, &info);
+    char picture[1024] = "";
+    const char *mods = getenv("UNCHARTED_MOD_DIR");
+    if (mods && *mods) {
+        size_t first = strcspn(mods, ";");
+        snprintf(picture, sizeof(picture), "%.*s/uc2mp/loading/%s.png", (int)first, mods, map);
+    }
+    gow3gpu_match_loading(1, info.mode, info.name, info.rules, *picture ? picture : NULL);
+    uc2mp_spawn_on_spawned = uc2mp_hide_match_loading;
+    printf("UC2MP: match loading screen: %s, %s (%s)\n", info.mode, info.name, *picture ? picture : "no picture");
+}
+
+/* Mouse look stub (src/runtime_mouselook.h): saves rax, rcx, rdx, rsi, rdi, r8-r11 and xmm0-7
+ * (the entry's argument and scratch registers; rsp stays 16-byte aligned at the call), calls the
+ * handler with rdi/rsi/rdx unchanged, stores a non-NULL result over the saved rdx, restores them,
+ * replays the replaced bytes and jumps back. */
+static unsigned build_mouse_look_stub(unsigned char *p, const MouseLookSite *site, uintptr_t resume) {
+    static const unsigned char save[] = {
+        0x50, 0x51, 0x52, 0x56, 0x57, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53,
+        0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00,
+        0xf3, 0x0f, 0x7f, 0x04, 0x24,       0xf3, 0x0f, 0x7f, 0x4c, 0x24, 0x10,
+        0xf3, 0x0f, 0x7f, 0x54, 0x24, 0x20, 0xf3, 0x0f, 0x7f, 0x5c, 0x24, 0x30,
+        0xf3, 0x0f, 0x7f, 0x64, 0x24, 0x40, 0xf3, 0x0f, 0x7f, 0x6c, 0x24, 0x50,
+        0xf3, 0x0f, 0x7f, 0x74, 0x24, 0x60, 0xf3, 0x0f, 0x7f, 0x7c, 0x24, 0x70,
+    };
+    static const unsigned char restore[] = {
+        0xf3, 0x0f, 0x6f, 0x04, 0x24,       0xf3, 0x0f, 0x6f, 0x4c, 0x24, 0x10,
+        0xf3, 0x0f, 0x6f, 0x54, 0x24, 0x20, 0xf3, 0x0f, 0x6f, 0x5c, 0x24, 0x30,
+        0xf3, 0x0f, 0x6f, 0x64, 0x24, 0x40, 0xf3, 0x0f, 0x6f, 0x6c, 0x24, 0x50,
+        0xf3, 0x0f, 0x6f, 0x74, 0x24, 0x60, 0xf3, 0x0f, 0x6f, 0x7c, 0x24, 0x70,
+        0x48, 0x81, 0xc4, 0x80, 0x00, 0x00, 0x00,
+        0x41, 0x5b, 0x41, 0x5a, 0x41, 0x59, 0x41, 0x58, 0x5f, 0x5e, 0x5a, 0x59, 0x58,
+    };
+    unsigned n = 0;
+    memcpy(p + n, save, sizeof(save)); n += sizeof(save);
+    p[n++] = 0x48; p[n++] = 0xb8; /* mov rax, handler */
+    const uint64_t handler = (uint64_t)(uintptr_t)site->handler;
+    memcpy(p + n, &handler, 8); n += 8;
+    p[n++] = 0xff; p[n++] = 0xd0; /* call rax */
+    /* test rax, rax; jz +8; mov [rsp + 0xb0], rax (the saved rdx: 0x80 of xmm, then r11 r10 r9
+     * r8 rdi rsi above it) */
+    static const unsigned char replace_rdx[] = {0x48, 0x85, 0xc0, 0x74, 0x08,
+                                                0x48, 0x89, 0x84, 0x24, 0xb0, 0x00, 0x00, 0x00};
+    memcpy(p + n, replace_rdx, sizeof(replace_rdx)); n += sizeof(replace_rdx);
+    memcpy(p + n, restore, sizeof(restore)); n += sizeof(restore);
+    memcpy(p + n, site->expected, site->length); n += site->length;
+    static const unsigned char jump[] = {0xff, 0x25, 0x00, 0x00, 0x00, 0x00}; /* jmp [rip+0] */
+    memcpy(p + n, jump, sizeof(jump)); n += sizeof(jump);
+    const uint64_t target = (uint64_t)resume;
+    memcpy(p + n, &target, 8); n += 8;
+    return n;
+}
+static void install_mouse_look(Segment *segments, uint64_t count, uint64_t size) {
+    if (!runtime_mouselook_enabled()) return;
+    unsigned n = 0, used = 0, installed = 0;
+    const MouseLookSite *sites = runtime_mouselook_sites(&n);
+    unsigned char *stubs = NULL;
+    for (unsigned i = 0; i < n; ++i) {
+        const MouseLookSite *site = &sites[i];
+        if (site->offset + site->expected_length > size || !mapped(segments, count, site->offset, site->expected_length) ||
+            memcmp(image + site->offset, site->expected, site->expected_length)) continue;
+        if (!stubs && !(stubs = allocate_near_image(size))) {
+            puts("Mouse look: unavailable (no stub page in range)");
+            return;
+        }
+        if (used + 256 > page_size) break;
+        build_mouse_look_stub(stubs + used, site, (uintptr_t)(image + site->offset + site->length));
+        if (!install_jump(site->offset, site->length, stubs + used)) {
+            printf("Mouse look: %s unavailable (stub out of range)\n", site->game);
+            continue;
+        }
+        runtime_mouselook_set_image(image);
+        printf("Mouse look: %s camera at image offset %#llx\n", site->game, (unsigned long long)site->offset);
+        used += 256;
+        ++installed;
+    }
+    if (stubs) protect(stubs, page_size, 5);
+    if (!installed) puts("Mouse look: no known camera code in this executable (mouse acts as the right stick)");
+    else runtime_mouselook_install_patches(); /* gow3 1 Nov 2026 */
+}
+/* Damage dealt/taken and green/blue/gold orb multipliers (src/damage_hook.h, src/orb_hook.h):
+ * the stubs read the menu's floats directly, so changes apply on the next hit or pickup. */
+static void install_stat_multipliers(Segment *segments, uint64_t count, uint64_t size) {
+    const uint64_t damage_at = gow3_signature_find(image, size, &gow3_damage_site);
+    const uint64_t pickup_at = gow3_signature_find(image, size, &gow3_orb_pickup_site);
+    int damage = damage_at != UINT64_MAX && mapped(segments, count, damage_at, GOW3_DAMAGE_HOOK_LENGTH) &&
+                 gow3_damage_signature_match(image + damage_at, size - damage_at);
+    int pickup = pickup_at != UINT64_MAX && mapped(segments, count, pickup_at, GOW3_ORB_PICKUP_LENGTH) &&
+                 gow3_orb_pickup_signature_match(image + pickup_at, size - pickup_at);
+    unsigned char *stubs = damage || pickup ? allocate(page_size) : NULL;
+    if (damage) {
+        gow3_damage_build_stub(stubs, gow3_damage_multiplier(1), gow3_damage_multiplier(0),
+                               (uintptr_t)(image + damage_at + GOW3_DAMAGE_HOOK_LENGTH));
+    }
+    if (pickup) {
+        gow3_orb_pickup_build_stub(stubs + 256, gow3_orb_pickup_multiplier(0), gow3_orb_pickup_multiplier(1),
+                                   gow3_orb_pickup_multiplier(2),
+                                   (uintptr_t)(image + pickup_at + GOW3_ORB_PICKUP_LENGTH));
+    }
+    if (stubs) protect(stubs, page_size, 5);
+    damage = damage && install_jump(damage_at, GOW3_DAMAGE_HOOK_LENGTH, stubs);
+    pickup = pickup && install_jump(pickup_at, GOW3_ORB_PICKUP_LENGTH, stubs + 256);
+    gow3_stat_multipliers_status(damage, pickup);
+    printf("Multipliers: damage %s, green/blue/gold orbs %s\n", damage ? "ready" : "unavailable",
+           pickup ? "ready" : "unavailable");
+}
+/* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
+ * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
+ * function pointers): the patch holds the address at the patches' base, rebased here. */
+static void apply_patches(const char *path, Segment *segments, uint64_t ns, const Reloc *relocs, uint64_t nr) {
+    FILE *f=fopen(path,"rb");
+    char magic[8];
+    if (!f || fread(magic,1,8,f)!=8 || memcmp(magic,"G3PATCH2",8)) fail("invalid patch file");
+    uint64_t base=read64(f), count=read64(f), bytes=0, rebased=0;
+    unsigned char data[4096];
+    for (uint64_t i=0;i<count;++i) {
+        uint64_t offset=read64(f), length=read64(f);
+        if (!length || length>sizeof(data) || !mapped(segments,ns,offset,length) || fread(data,1,length,f)!=length)
+            fail("bad patch entry");
+        uint64_t slots[sizeof(data)/8]; size_t nslots=0;
+        for (uint64_t r=0;r<nr;++r) {
+            if (!(relocs[r].target<offset+length && offset<relocs[r].target+8)) continue;
+            uint64_t target=relocs[r].target, value;
+            if (relocs[r].kind || target<offset || target+8>offset+length) fail("patch overlaps a relocation");
+            memcpy(&value,data+(target-offset),8);
+            if (value<base || !mapped(segments,ns,value-base,1)) fail("patch writes a pointer outside the image");
+            slots[nslots++]=target;
+        }
+        memcpy(image+offset,data,length);
+        for (size_t s=0;s<nslots;++s) {
+            uint64_t value;
+            memcpy(&value,image+slots[s],8);
+            value=(uint64_t)(uintptr_t)image+(value-base);
+            memcpy(image+slots[s],&value,8);
+        }
+        rebased+=nslots;
+        bytes+=length;
+    }
+    if (fgetc(f)!=EOF) fail("trailing data in patch file");
+    fclose(f);
+    printf("Patches: %" PRIu64 " writes, %" PRIu64 " bytes applied, %" PRIu64 " pointers rebased\n",count,bytes,rebased);
+}
+/* Restarts the game through run.sh (the settings menu: a new render resolution is a patch
+ * applied at start). Descriptors are closed first so the old GPU device and its memory are
+ * released before the new process opens its own. */
+void runtime_restart(void) {
+    fflush(NULL);
+#ifdef _WIN32
+    /* run.py sets GOW3_RESTART_COMMAND: the launch command line, started again (new patches). */
+    const char *command=getenv("GOW3_RESTART_COMMAND");
+    puts("Runtime: restarting through run.py");
+    if (!command || !*command) { fputs("runtime_restart: GOW3_RESTART_COMMAND is not set\n",stderr); _exit(1); }
+    char *line=_strdup(command);
+    /* Same output handles: a launcher reading the game's log keeps reading the new launch. */
+    STARTUPINFOA startup={.cb=sizeof(startup),.dwFlags=STARTF_USESTDHANDLES,
+                          .hStdInput=GetStdHandle(STD_INPUT_HANDLE),.hStdOutput=GetStdHandle(STD_OUTPUT_HANDLE),
+                          .hStdError=GetStdHandle(STD_ERROR_HANDLE)};
+    PROCESS_INFORMATION process;
+    if (!line || !CreateProcessA(NULL,line,NULL,NULL,TRUE,0,NULL,NULL,&startup,&process)) {
+        fprintf(stderr,"runtime_restart: CreateProcess failed (%lu)\n",GetLastError()); _exit(1);
+    }
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+    /* The new launch waits for this process's GPU device to go away (run.py --after). */
+    TerminateProcess(GetCurrentProcess(),0);
+#else
+    const char *command = getenv("GOW3_RESTART_COMMAND");
+    syscall(SYS_close_range, 3u, ~0u, 0u);
+    if (command && *command) {
+        puts("Runtime: restarting through GOW3_RESTART_COMMAND");
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+    } else {
+        puts("Runtime: restarting through run.sh");
+        execlp("bash", "bash", "run.sh", (char *)NULL);
+    }
+    perror("runtime_restart: exec");
+    _exit(1);
+#endif
+}
+
+int main(int argc, char **argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+#ifndef _WIN32
+    /* Keep host heap objects handed to the guest (thread handles, TLS) in the
+       non-PIE brk heap, i.e. below 1 TiB: the guest packs pointers into 40 bits. */
+    mallopt(M_ARENA_MAX,1);
+    mallopt(M_MMAP_THRESHOLD,32*1024*1024);
+#endif
+    if (argc == 2 && !strcmp(argv[1], "--vulkan-only")) return vulkan_smoke();
+#ifdef _WIN32
+    /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest
+     * TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
+    runtime_memory_reserve();
+    runtime_thread_tcb_offset();
+#endif
+    int cpu_only = 0, strict_imports = 0, check_imports = 0, game_hooks = 1, low_image = 0;
+    int validate_uc2mp = 0;
+    /* Guest argv: --guest-path is argv[0], then --guest-arg values. The Collection menu's
+     * LoadExec argv for Uncharted 2/3 is the complete argv: "eboot.bin" "ispartofuccollection". */
+    const char *guest_argv[17]={"/app0/eboot.bin"};
+    int guest_argc=1;
+    unsigned timeout_seconds = 10;
+    const char *content_profile=NULL, *app0=NULL, *user_dir=NULL, *patch_file=NULL;
+    const char *app0_overlays[4]; int app0_overlay_count=0;
+    for (int i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--cpu-only")) cpu_only = 1;
+        else if (!strcmp(argv[i], "--strict-imports")) strict_imports = 1;
+        else if (!strcmp(argv[i], "--check-imports")) check_imports = 1;
+        else if (!strcmp(argv[i], "--validate-uc2mp")) { validate_uc2mp = 1; cpu_only = 1; }
+        else if (!strcmp(argv[i], "--no-game-hooks")) game_hooks = 0;
+        else if (!strcmp(argv[i], "--low-image")) low_image = 1;
+        else if (!strcmp(argv[i], "--content-profile") && i+1<argc) content_profile=argv[++i];
+        else if (!strcmp(argv[i], "--app0") && i+1<argc) app0=argv[++i];
+        else if (!strcmp(argv[i], "--app0-overlay") && i+1<argc) {
+            if (app0_overlay_count==4) { fprintf(stderr, "Too many --app0-overlay options\n"); return 1; }
+            app0_overlays[app0_overlay_count++]=argv[++i];
+        }
+        else if (!strcmp(argv[i], "--user") && i+1<argc) user_dir=argv[++i];
+        else if (!strcmp(argv[i], "--patches") && i+1<argc) patch_file=argv[++i];
+        else if (!strcmp(argv[i], "--timeout") && i+1<argc) timeout_seconds=(unsigned)strtoul(argv[++i],NULL,10);
+        else if (!strcmp(argv[i], "--guest-path") && i+1<argc) guest_argv[0]=argv[++i];
+        else if (!strcmp(argv[i], "--guest-arg") && i+1<argc) {
+            if (guest_argc+1>=(int)(sizeof(guest_argv)/sizeof(*guest_argv))) { fprintf(stderr, "Too many --guest-arg options\n"); return 1; }
+            guest_argv[guest_argc++]=argv[++i];
+        }
+        else { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 1; }
+    }
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s boot.bin [--cpu-only] [--strict-imports] [--check-imports] [--validate-uc2mp] [--no-game-hooks] [--content-profile file] [--app0 dir] [--app0-overlay dir]... [--user dir] [--patches file] [--timeout seconds] [--guest-path /app0/file] [--guest-arg value]... | --vulkan-only\n", argv[0]);
+        return 1;
+    }
+    /* The guest code needs the PS4's instruction sets (#33, #66); GOW3_CPU_CHECK=0 skips this.
+     * gow3 1 Nov 2026 (#154, #299): MOVBE, BMI1, LZCNT and F16C are emulated where the CPU lacks
+     * them (runtime_isa.c; GOW3_ISA_COMPAT=0: off); SSE4.2, POPCNT and AVX are still needed. */
+    const char *cpu_check = getenv("GOW3_CPU_CHECK");
+    const CpuFeatureWords cpu_words = cpu_feature_words();
+    char emulated[64];
+    const int isa_emulation = runtime_isa_configure(cpu_words.leaf1_ecx, cpu_words.leaf7_ebx, cpu_words.ext1_ecx,
+                                                    emulated, sizeof emulated);
+    const char *isa_env = getenv("GOW3_ISA_COMPAT");
+    const int isa_allowed = !(isa_env && isa_env[0] == '0');
+    if (!cpu_check || strcmp(cpu_check, "0")) {
+        char missing[128];
+        CpuFeatureWords checked = cpu_words;
+        if (isa_emulation) {
+            checked.leaf1_ecx |= (1u << 22) | (1u << 29);   /* MOVBE, F16C */
+            checked.leaf7_ebx |= 1u << 3;                   /* BMI1 */
+            checked.ext1_ecx |= 1u << 5;                    /* LZCNT */
+        }
+        if (cpu_missing_features(checked, missing, sizeof missing)) {
+            printf("STOP: this CPU lacks instruction sets the game's code uses: %s (%s)\n", missing,
+                   isa_allowed ? "a CPU with AVX is needed: Intel Sandy Bridge 2011 or newer, AMD FX or newer"
+                               : "Intel Haswell 2013 or newer, or AMD Ryzen or newer, is needed");
+            return 20;
+        }
+    }
+    if (isa_emulation == 1)
+        printf("CPU: %s emulated (this CPU lacks them; the game's code runs them in an exception handler)\n", emulated);
+    if (content_profile) {
+        FILE *profile=fopen(content_profile,"rb");
+        unsigned char data[28];
+        if (!profile) fail("cannot open content profile");
+        if (fread(data,1,sizeof(data),profile)!=sizeof(data) || fgetc(profile)!=EOF || memcmp(data,"G3CONT01",8)) fail("invalid content profile");
+        fclose(profile);
+        uint32_t values[5];
+        for (unsigned i=0;i<5;++i) {
+            unsigned char *p=data+8+i*4;
+            values[i]=(uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
+        }
+        runtime_content_configure(values);
+    }
+    if (app0) {
+        runtime_file_configure(app0, user_dir ? user_dir : "user");
+        for (int i=0;i<app0_overlay_count;++i) runtime_file_add_overlay(app0_overlays[i]);
+        char sfo[4096], id[16]="";
+        if (runtime_file_translate("/app0/sce_sys/param.sfo",sfo,sizeof(sfo))) snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0);
+        if (sfo_value(sfo,"INSTALL_DIR_SAVEDATA",id,sizeof(id),NULL) || sfo_value(sfo,"TITLE_ID",id,sizeof(id),NULL))
+            runtime_savedata_configure(id);
+    }
+    gow3gpu_register_kernel();
+#ifdef _WIN32
+    SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;
+    AddVectoredExceptionHandler(1, vectored_fault);
+    SetUnhandledExceptionFilter(unhandled_fault);
+    runtime_host_scheduling_init();
+    if (getenv("GOW3_STRICT_HANDLES")) {
+        PROCESS_MITIGATION_STRICT_HANDLE_CHECK_POLICY strict={0};
+        strict.RaiseExceptionOnInvalidHandleReference=1;
+        strict.HandleExceptionsPermanentlyEnabled=1;
+        if (!SetProcessMitigationPolicy(ProcessStrictHandleCheckPolicy,&strict,sizeof(strict)))
+            fprintf(stderr,"GOW3_STRICT_HANDLES: policy not set (%lu)\n",GetLastError());
+    }
+    (void)timeout_seconds; /* no watchdog on Windows */
+#else
+    page_size = (size_t)sysconf(_SC_PAGESIZE);
+    struct sigaction sa = {0}; sa.sa_sigaction = fault; sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL); sigaction(SIGILL, &sa, NULL); sigaction(SIGBUS, &sa, NULL);
+    Dl_info self_info;
+    if (dladdr((void *)main,&self_info)) exe_base=(uintptr_t)self_info.dli_fbase;
+    struct sigaction dump = {0}; dump.sa_sigaction = thread_dump; dump.sa_flags = SA_SIGINFO|SA_RESTART;
+    sigemptyset(&dump.sa_mask); sigaction(SIGUSR2, &dump, NULL);
+    struct sigaction alarm_action = {0}; alarm_action.sa_sigaction = watchdog; alarm_action.sa_flags = SA_SIGINFO;
+    sigemptyset(&alarm_action.sa_mask); sigaction(SIGALRM, &alarm_action, NULL);
+    alarm(timeout_seconds); /* 0 disables the watchdog */
+#endif
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) fail("cannot open boot file; run prepare.py first");
+    char magic[8];
+    if (fread(magic, 1, 8, f) != 8 || (memcmp(magic, "G3PROBE1", 8) && memcmp(magic, "G3PROBE2", 8) && memcmp(magic,"G3PROBE3",8) && memcmp(magic,"G3PROBE4",8) && memcmp(magic,"G3PROBE5",8))) fail("bad boot file signature");
+    uint64_t size = read64(f), entry = read64(f), ns = read64(f), nr = read64(f);
+    import_count = read64(f);
+    uint64_t capabilities = memcmp(magic, "G3PROBE1", 8) ? read64(f) : 0;
+    if (capabilities & ~UINT64_C(1)) fail("unknown runtime capabilities");
+    runtime_start(strict_imports ? 0 : capabilities);
+    if (!size || size > 512*1024*1024 || entry >= size || !ns || ns > 64 || nr > 1000000 || import_count > 100000)
+        fail("boot file limits exceeded");
+    int multi=!memcmp(magic,"G3PROBE5",8);
+    int linked=!memcmp(magic,"G3PROBE3",8) || !memcmp(magic,"G3PROBE4",8) || multi;
+    int native_libc=linked && !strict_imports && (capabilities&1);
+    uint64_t main_tls[4]={0};
+    uint64_t nb=0,procparam=0;
+    uint64_t *bindings=calloc(import_count ? import_count : 1,sizeof(*bindings));
+    uint64_t *binding_kinds=calloc(import_count ? import_count : 1,sizeof(*binding_kinds));
+    if (!bindings || !binding_kinds) fail("allocation failed");
+    if (multi) {
+        /* G3PROBE5: procparam, eboot TLS, module table, bindings (link_modules.py). */
+        procparam=read64(f);
+        for (int i=0;i<4;++i) main_tls[i]=read64(f);
+        module_count=read64(f);
+        if (!module_count || module_count>sizeof(modules)/sizeof(*modules)) fail("invalid module count");
+        for (uint64_t m=0;m<module_count;++m) {
+            LinkedModule *x=&modules[m];
+            x->base=read64(f); x->size=read64(f); x->init=read64(f); x->tls_address=read64(f);
+            x->tls_memsz=read64(f); x->tls_filesz=read64(f); x->tls_module=read64(f);
+        }
+        nb=read64(f);
+    } else if (linked) {
+        LinkedModule *x=&modules[0];
+        module_count=1;
+        x->base=read64(f); x->size=read64(f); x->init=read64(f);
+        x->tls_address=read64(f); x->tls_memsz=read64(f); x->tls_filesz=read64(f); x->tls_module=2; nb=read64(f);
+        procparam=read64(f);
+        if (!memcmp(magic,"G3PROBE4",8)) for (int i=0;i<4;++i) main_tls[i]=read64(f);
+    }
+    if (linked) {
+        if (main_tls[1]>main_tls[2] || main_tls[2]>1024*1024 || main_tls[0]>size ||
+            main_tls[1]>size-main_tls[0] || (main_tls[3] & (main_tls[3]-1)) || main_tls[3]>4096)
+            fail("invalid eboot TLS metadata");
+        for (uint64_t m=0;m<module_count;++m) {
+            LinkedModule *x=&modules[m];
+            if (x->base>=size || !x->size || x->size>size-x->base || x->init<x->base || x->init-x->base>=x->size ||
+                (x->tls_module && (x->tls_address>=size || x->tls_memsz>size-x->tls_address || x->tls_memsz>1024*1024 ||
+                                   x->tls_filesz>x->tls_memsz || x->tls_module<2 || x->tls_module>7)))
+                fail("invalid linked module metadata");
+        }
+        if (nb>import_count) fail("invalid binding count");
+        for (uint64_t i=0;i<nb;++i) {
+            uint64_t index=read64(f),address=read64(f),kind=read64(f);
+            int inside=0;
+            for (uint64_t m=0;m<module_count;++m)
+                if (address>=modules[m].base && address-modules[m].base<modules[m].size) inside=1;
+            if (index>=import_count || !inside || (kind!=1 && kind!=2) || bindings[index]) fail("invalid native binding");
+            bindings[index]=address; binding_kinds[index]=kind;
+        }
+    }
+    Segment *segments = calloc(ns, sizeof(*segments));
+    Reloc *relocs = calloc(nr ? nr : 1, sizeof(*relocs));
+    names = calloc(import_count ? import_count : 1, sizeof(*names));
+    if (!segments || !relocs || !names) fail("allocation failed");
+    for (uint64_t i = 0; i < ns; ++i) {
+        segments[i].address = read64(f);
+        segments[i].size = read64(f);
+        segments[i].flags = read64(f);
+        if (segments[i].address > size || segments[i].size > size - segments[i].address ||
+            segments[i].address % page_size || segments[i].flags > 7) fail("bad segment");
+    }
+    if (fread(names, 128, import_count, f) != import_count) fail("truncated import names");
+    for (uint64_t i = 0; i < import_count; ++i)
+        if (!memchr(names[i], 0, 128)) fail("unterminated import name");
+    for (uint64_t i = 0; i < nr; ++i) {
+        relocs[i].target = read64(f);
+        relocs[i].kind = read64(f);
+        relocs[i].value = read64(f);
+        relocs[i].addend = read64(f);
+        if (!mapped(segments, ns, relocs[i].target, 8) || relocs[i].kind > 2 ||
+            (relocs[i].kind && relocs[i].value >= import_count) ||
+            (relocs[i].kind != 2 && relocs[i].addend) || relocs[i].addend >= page_size) fail("bad relocation");
+    }
+    for (uint64_t m=0;m<module_count;++m)
+        if (!mapped(segments,ns,modules[m].init,1) || (modules[m].tls_module && !mapped(segments,ns,modules[m].tls_address,modules[m].tls_memsz)))
+            fail("unmapped module metadata");
+    if (module_count && !mapped(segments,ns,procparam,64)) fail("unmapped procparam");
+    for (uint64_t i=0;i<import_count;++i) {
+        if (!bindings[i]) continue;
+        if (!mapped(segments,ns,bindings[i],1)) fail("unmapped native export");
+        if (binding_kinds[i]==1) {
+            int executable=0;
+            for (uint64_t s=0;s<ns;++s)
+                if ((segments[s].flags&1) && bindings[i]>=segments[s].address &&
+                    bindings[i]-segments[s].address<segments[s].size) executable=1;
+            if (!executable) fail("native function is not executable");
+        }
+    }
+    image = low_image ? allocate_low_image(round_page(size)) : allocate(round_page(size));
+    printf("Guest image base: %p (%s)\n",image,low_image ? "below 2 GiB" : "default range");
+    if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
+    fclose(f);
+    if (!cpu_only) {
+        char title[128]="Uncharted: The Nathan Drake Collection", serial[16]="UNKNOWN", sfo[4096];
+        uint32_t attributes=0;
+        if (!app0 || runtime_file_translate("/app0/sce_sys/param.sfo",sfo,sizeof(sfo))) snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+        sfo_value(sfo,"TITLE",title,sizeof(title),NULL);
+        sfo_value(sfo,"TITLE_ID",serial,sizeof(serial),NULL);
+        sfo_value(sfo,"ATTRIBUTE",NULL,0,&attributes);
+        uint64_t sdk=0;
+        if (procparam) memcpy(&sdk,image+procparam+16,8); /* procparam: size, magic, count, sdk_version */
+        Gow3GpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080};
+        gpu_enabled=1; /* page tracking starts while the rasterizer registers guest memory */
+        if (gow3gpu_init(&gpu)) fail("GPU initialization failed");
+        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,gow3gpu_symbol_count());
+    }
+    unsigned char *traps = allocate(round_page((import_count + 1) * 32));
+    unsigned char *data_traps = allocate((import_count + 1) * page_size);
+    protect(data_traps, (import_count + 1) * page_size, 0);
+    for (uint64_t i = 0; i < import_count; ++i) {
+        unsigned char *t = traps + i * 32;
+        /* SysV: mov edi, index; movabs rax, handler; jmp rax. No fake return values. */
+        uint32_t index = (uint32_t)i;
+        uintptr_t handler = (uintptr_t)unresolved;
+        t[0] = 0x48; t[1] = 0x89; t[2] = 0xfe; /* mov rsi,rdi: preserve arg0 */
+        t[3] = 0xbf; memcpy(t + 4, &index, 4);
+        t[8] = 0x48; t[9] = 0xb8; memcpy(t + 10, &handler, 8);
+        t[18] = 0xff; t[19] = 0xe0;
+    }
+    for (uint64_t i = 0; i < nr; ++i) {
+        uintptr_t value = relocs[i].kind == 2 ? (uintptr_t)(data_traps + page_size * relocs[i].value + relocs[i].addend)
+                        : relocs[i].kind == 1 ? (uintptr_t)(traps + 32 * relocs[i].value)
+                        : (uintptr_t)image + relocs[i].value;
+        if (relocs[i].kind) {
+            uintptr_t resolved = runtime_resolve(names[relocs[i].value], relocs[i].kind == 2);
+            if (resolved) value = resolved + relocs[i].addend;
+            else if (native_libc && bindings[relocs[i].value]) {
+                uint64_t address=bindings[relocs[i].value];
+                if (binding_kinds[relocs[i].value]!=relocs[i].kind || !mapped(segments,ns,address,relocs[i].addend+1)) fail("native export kind/range mismatch");
+                value=(uintptr_t)image+address+relocs[i].addend;
+            }
+        }
+        memcpy(image + relocs[i].target, &value, 8);
+    }
+    if (validate_uc2mp) {
+        /* Check the complete bridge against the actual relocated image without
+         * starting Vulkan, module initializers or any guest code. Mutations are
+         * confined to this process's disposable image. Explicit opt-in remains
+         * required, exactly as for the game. */
+        install_uc2mp_menu_bridge(segments, ns, size);
+        const int matched = uc2mp_menu_image == image;
+        printf("UC2MP validation: %s; no guest instructions executed\n",
+               matched ? "all signatures and relocated tables matched" : "bridge rejected");
+        fflush(NULL);
+        _exit(matched ? 0 : 1);
+    }
+    if (check_imports) {
+        /* Lists every import the game would stop at, without running it (needs the GPU
+         * library: without --cpu-only its symbols are registered above). */
+        unsigned char *checked=calloc(import_count ? import_count : 1,1);
+        if (!checked) fail("allocation failed");
+        uint64_t missing=0;
+        for (uint64_t i=0;i<nr;++i) {
+            uint64_t index=relocs[i].value;
+            if (!relocs[i].kind || checked[index]) continue;
+            checked[index]=1;
+            if (runtime_resolve(names[index],relocs[i].kind==2) || (native_libc && bindings[index])) continue;
+            printf("MISSING: %s (%s)\n",names[index],runtime_import_name(names[index]));
+            ++missing;
+        }
+        printf("Imports: %" PRIu64 " missing\n",missing);
+        fflush(NULL);
+        _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
+    }
+    if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
+    if (gpu_enabled) install_uc2mp_menu_bridge(segments, ns, size);
+    if (gpu_enabled && install_uc2mp_spawn_bridge(segments, ns, size, guest_argc, guest_argv) == 1 &&
+        (uc2mp_spawn_catalog || uc2mp_spawn_stage))
+        uc2mp_show_match_loading(uc2mp_spawn_catalog ? uc2mp_spawn_catalog->level_name : "stage-multi");
+    if (gpu_enabled) install_uc2mp_text_bridge(segments, ns, size);
+    if (gpu_enabled && install_uc2mp_game_frame_bridge(segments, ns, size)<0) {
+        fputs("STOP: UC2MP game frame signatures rejected\n",stderr); return 1;
+    }
+    if (gpu_enabled) install_mouse_look(segments, ns, size);
+    /* gow3 24 Oct 2026: co-op research console (runtime_coop.c; GOW3_COOP_CMD / GOW3_COOP_BOOT, off by default). */
+    { extern void runtime_coop_install(unsigned char *, uint64_t); runtime_coop_install(image, size); }
+    runtime_gamesettings_set_image(image, size);
+    if (gpu_enabled && game_hooks) {
+        install_orb_multiplier(segments, ns, size);
+        install_cheats(segments, ns, size);
+        install_actor_watch(segments, ns, size);
+        install_stat_multipliers(segments, ns, size);
+    }
+#ifdef _WIN32
+    printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
+    /* gow3 25 Oct 2026: accesses that can fault in functions keeping data below rsp run with rsp
+     * 128 lower (runtime_redzone.c; GitHub #205). After every other code change: it skips code
+     * our hooks and the eboot patches changed. GOW3_RED_ZONE=0: off. */
+    {
+        uint64_t *triples = calloc(ns ? ns * 3 : 3, sizeof(*triples));
+        if (!triples) fail("allocation failed");
+        for (uint64_t i = 0; i < ns; ++i) {
+            triples[3 * i] = segments[i].address;
+            triples[3 * i + 1] = segments[i].size;
+            triples[3 * i + 2] = segments[i].flags;
+        }
+        runtime_redzone_install(image, size, triples, ns);
+        free(triples);
+    }
+#endif
+    protect(traps, round_page((import_count + 1) * 32), 5);
+    protect(image, round_page(size), 0);
+    int executable_entry = 0;
+    for (uint64_t i = 0; i < ns; ++i) {
+        protect(image + segments[i].address, round_page(segments[i].size), (unsigned)segments[i].flags);
+        if ((segments[i].flags & 1) && entry >= segments[i].address && entry - segments[i].address < segments[i].size)
+            executable_entry = 1;
+    }
+    if (!executable_entry) fail("entry is not executable");
+    printf("Mapped %" PRIu64 " bytes, %" PRIu64 " segments; applied %" PRIu64 " relocations\n", size, ns, nr);
+    if (native_libc) {
+        for (uint64_t m=0;m<module_count;++m) {
+            int init_executable=0;
+            for (uint64_t i=0;i<ns;++i)
+                if ((segments[i].flags&1) && modules[m].init>=segments[i].address && modules[m].init-segments[i].address<segments[i].size) init_executable=1;
+            if (!init_executable) fail("module init is not executable");
+            if (modules[m].tls_module)
+                runtime_set_module_tls(modules[m].tls_module,image+modules[m].tls_address,modules[m].tls_filesz,modules[m].tls_memsz);
+        }
+        runtime_set_main_tls(image+main_tls[0],main_tls[1],main_tls[2],main_tls[3]);
+        runtime_thread_attach_main();
+        runtime_set_procparam(image+procparam);
+        /* Dependencies start in link order (libc first), as the PS4 dynamic linker does. */
+        for (uint64_t m=0;m<module_count;++m) {
+            printf("Starting linked module %" PRIu64 " at image offset 0x%" PRIx64 "; native bindings=%" PRIu64 "\n",m,modules[m].init,nb);
+            typedef int (ABI *ModuleInit)(uint64_t,void *,void *);
+            int result=((ModuleInit)(image+modules[m].init))(0,NULL,NULL);
+            printf("Module %" PRIu64 " initializer returned %d\n",m,result);
+            if (result) fail("module initializer failed");
+        }
+    }
+    printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
+#ifdef _WIN32
+    start_exec_watch();
+    start_pokes();
+#endif
+    entered_game=1;
+    struct { uint64_t argc; const char *argv[17]; } params = {(uint64_t)guest_argc, {NULL}};
+    for (int i=0;i<guest_argc;++i) params.argv[i]=guest_argv[i];
+    if (guest_argc>1) {
+        printf("Guest arguments:");
+        for (int i=0;i<guest_argc;++i) printf(" \"%s\"",guest_argv[i]);
+        putchar('\n');
+    }
+#ifdef _WIN32
+    typedef void (ABI *Entry)(void *, void (ABI *)(void));
+    extern void runtime_thread_widen_stack_limit(void);
+    runtime_thread_widen_stack_limit();   /* the guest main thread runs fibers too */
+    ((Entry)(image + entry))(&params, guest_exit);
+#else
+    /* The guest main thread runs on a stack below 1 TiB like PS4 stacks. */
+    enum { MAIN_STACK=8*1024*1024 };
+    unsigned char *stack=runtime_low_map(MAIN_STACK,PROT_READ|PROT_WRITE);
+    if (!stack) fail("cannot allocate guest main stack");
+    enter_on_stack(image+entry,&params,(void *)guest_exit,stack+MAIN_STACK-64);
+#endif
+    fail("entry unexpectedly returned");
+}

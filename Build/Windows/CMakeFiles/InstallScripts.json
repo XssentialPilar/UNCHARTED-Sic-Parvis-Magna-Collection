@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/cmake_install.cmake",
+		"C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/miniz/cmake_install.cmake",
+		"C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/sirit/cmake_install.cmake",
+		"C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/sirit/externals/SPIRV-Headers/cmake_install.cmake",
+		"C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/sirit/src/cmake_install.cmake",
+		"C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
