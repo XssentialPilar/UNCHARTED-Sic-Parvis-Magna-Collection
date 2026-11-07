@@ -369,22 +369,52 @@ static int mouse_enabled(void) { return controls.mouse; }
  * source bound to it (L2/R2 show the mouse first, the rest the keyboard), and which device the
  * player used last: the games then show key caps and mice instead of the controller's buttons. */
 static void key_label(int scancode, char *out, size_t size) {
-    static const struct { const char *sdl, *label; } names[]={
-        {"Space","SPACE"}, {"Left Ctrl","CTRL"}, {"Right Ctrl","CTRL"}, {"Left Shift","SHIFT"},
-        {"Right Shift","SHIFT"}, {"Left Alt","ALT"}, {"Right Alt","ALT"}, {"Return","ENTER"},
-        {"Keypad Enter","ENTER"}, {"Escape","ESC"}, {"Backspace","BKSP"}, {"Tab","TAB"},
-        {"CapsLock","CAPS"}, {"Delete","DEL"}, {"Insert","INS"}, {"Home","HOME"}, {"End","END"},
-        {"PageUp","PGUP"}, {"PageDown","PGDN"}, {"Up","\xe2\x86\x91"}, {"Down","\xe2\x86\x93"},
-        {"Left","\xe2\x86\x90"}, {"Right","\xe2\x86\x92"},
+    if (scancode >= SDL_SCANCODE_A && scancode <= SDL_SCANCODE_Z) {
+        snprintf(out, size, "KEY_%c", 'A' + (scancode - SDL_SCANCODE_A));
+        return;
+    }
+    if (scancode >= SDL_SCANCODE_1 && scancode <= SDL_SCANCODE_9) {
+        snprintf(out, size, "DIGIT_%c", '1' + (scancode - SDL_SCANCODE_1));
+        return;
+    }
+    if (scancode == SDL_SCANCODE_0) {
+        snprintf(out, size, "DIGIT_0");
+        return;
+    }
+    static const struct { int code; const char *canonical; } names[] = {
+        {SDL_SCANCODE_SPACE, "SPACE"},
+        {SDL_SCANCODE_TAB, "TAB"},
+        {SDL_SCANCODE_RETURN, "ENTER"},
+        {SDL_SCANCODE_KP_ENTER, "ENTER"},
+        {SDL_SCANCODE_ESCAPE, "ESCAPE"},
+        {SDL_SCANCODE_BACKSPACE, "BACKSPACE"},
+        {SDL_SCANCODE_LSHIFT, "SHIFT_LEFT"},
+        {SDL_SCANCODE_RSHIFT, "SHIFT_RIGHT"},
+        {SDL_SCANCODE_LCTRL, "CONTROL_LEFT"},
+        {SDL_SCANCODE_RCTRL, "CONTROL_RIGHT"},
+        {SDL_SCANCODE_LALT, "ALT_LEFT"},
+        {SDL_SCANCODE_RALT, "ALT_RIGHT"},
+        {SDL_SCANCODE_CAPSLOCK, "CAPS_LOCK"},
+        {SDL_SCANCODE_DELETE, "DELETE"},
+        {SDL_SCANCODE_INSERT, "INSERT"},
+        {SDL_SCANCODE_HOME, "HOME"},
+        {SDL_SCANCODE_END, "END"},
+        {SDL_SCANCODE_PAGEUP, "PAGE_UP"},
+        {SDL_SCANCODE_PAGEDOWN, "PAGE_DOWN"},
+        {SDL_SCANCODE_UP, "ARROW_UP"},
+        {SDL_SCANCODE_DOWN, "ARROW_DOWN"},
+        {SDL_SCANCODE_LEFT, "ARROW_LEFT"},
+        {SDL_SCANCODE_RIGHT, "ARROW_RIGHT"},
     };
-    const char *name=SDL_GetScancodeName((SDL_Scancode)scancode);
-    if (!name) name="";
-    for (size_t i=0;i<sizeof(names)/sizeof(*names);++i)
-        if (!strcmp(name,names[i].sdl)) { snprintf(out,size,"%s",names[i].label); return; }
-    if (!strncmp(name,"Keypad ",7)) snprintf(out,size,"NUM%s",name+7);
-    else snprintf(out,size,"%s",name);
-    for (char *c=out;*c;++c) *c=(char)toupper((unsigned char)*c);
-    if (strlen(out)>5) out[5]=0;
+    for (size_t i = 0; i < sizeof(names)/sizeof(*names); ++i) {
+        if (scancode == names[i].code) {
+            snprintf(out, size, "%s", names[i].canonical);
+            return;
+        }
+    }
+    const char *name = SDL_GetScancodeName((SDL_Scancode)scancode);
+    if (!name) name = "";
+    snprintf(out, size, "%s", name);
 }
 /* Key and mouse icons for the devices that are on (GOW3_PROMPTS_LABELS=1: also for those off,
  * for scripted tests that keep the real keyboard and mouse off). */
@@ -395,7 +425,11 @@ static int prompt_labels_forced(void) {
 static int prompt_keyboard(void) { return keyboard_enabled() || prompt_labels_forced(); }
 static int prompt_mouse(void) { return mouse_enabled() || prompt_labels_forced(); }
 static void button_prompt(uint32_t ps, int prefer_mouse, char *out, size_t size) {
-    static const char *const mouse_prompts[]={"@LMB","@MMB","@RMB","@X1","@X2","@WHEELUP","@WHEELDOWN"};
+    static const char *const mouse_prompts[] = {
+        "MOUSE_LEFT", "MOUSE_MIDDLE", "MOUSE_RIGHT",
+        "MOUSE_SIDE_1", "MOUSE_SIDE_2",
+        "MOUSE_SCROLL_UP", "MOUSE_SCROLL_DOWN"
+    };
     int key=-1; const char *mouse=NULL;
     if (prompt_keyboard())
         for (size_t i=0;i<key_map.count && key<0;++i) if (key_map.entries[i].ps==ps) key=key_map.entries[i].source;
@@ -405,24 +439,24 @@ static void button_prompt(uint32_t ps, int prefer_mouse, char *out, size_t size)
     if (mouse && (prefer_mouse || key<0)) snprintf(out,size,"%s",mouse);
     else if (key>=0) key_label(key,out,size);
 }
-static void stick_prompts(const int directions[4], char (*out)[16]) {
+static void stick_prompts(const int directions[4], char (*out)[32]) {
     for (int d=0;d<4;++d) {
         out[d][0]=0;
         if (!prompt_keyboard()) continue;
         for (size_t i=0;i<stick_keys.count;++i)
-            if (stick_keys.entries[i].direction==directions[d]) { key_label(stick_keys.entries[i].source,out[d],16); break; }
+            if (stick_keys.entries[i].direction==directions[d]) { key_label(stick_keys.entries[i].source,out[d],32); break; }
     }
 }
 static void publish_prompts(void) {
     static const uint32_t buttons[GOW3_PROMPT_RIGHT+1]={BTN_CROSS,BTN_CIRCLE,BTN_SQUARE,BTN_TRIANGLE,
         BTN_L1,BTN_R1,BTN_L2,BTN_R2,BTN_L3,BTN_R3,BTN_OPTIONS,CLICK_LEFT,BTN_UP,BTN_DOWN,BTN_LEFT,BTN_RIGHT};
     static const int ls[4]={LS_UP,LS_LEFT,LS_DOWN,LS_RIGHT}, rs[4]={RS_UP,RS_LEFT,RS_DOWN,RS_RIGHT};
-    char text[GOW3_PROMPT_COUNT][16];
+    char text[GOW3_PROMPT_COUNT][32];
     const char *labels[GOW3_PROMPT_COUNT];
     for (int i=0;i<=GOW3_PROMPT_RIGHT;++i)
         button_prompt(buttons[i],buttons[i]==BTN_L2 || buttons[i]==BTN_R2,text[i],sizeof(text[i]));
-    stick_prompts(ls,&text[GOW3_PROMPT_LS_UP]);
-    stick_prompts(rs,&text[GOW3_PROMPT_RS_UP]);
+    stick_prompts(ls,(char (*)[32])&text[GOW3_PROMPT_LS_UP]);
+    stick_prompts(rs,(char (*)[32])&text[GOW3_PROMPT_RS_UP]);
     if (prompt_mouse()) snprintf(text[GOW3_PROMPT_RS_UP],sizeof(text[0]),"@MOUSE"); /* the mouse moves the camera */
     for (int i=0;i<GOW3_PROMPT_COUNT;++i) labels[i]=text[i];
     gow3gpu_prompts_set_labels(0,labels,GOW3_PROMPT_COUNT);

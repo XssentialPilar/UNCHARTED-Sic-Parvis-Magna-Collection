@@ -49,7 +49,7 @@ constexpr int Size = 512;
 // (512x512 RGBA8) and the button pictures (BC1 with mips, found by decoding the paks: 256x256 face
 // and shoulder buttons, 512x512 flat "HOLD" buttons in two press positions). The three games share
 // most pictures; Uncharted 1 and 2 have their own Cross, Uncharted 3 its own HOLD Triangles.
-enum class Kind { Rgba, Color, Alpha, Face, Shoulder, Dpad };
+enum class Kind { Rgba, Color, Alpha, Face, Shoulder, Dpad, Journal };
 struct KnownTexture {
     u64 hash;
     Kind kind;
@@ -74,13 +74,25 @@ constexpr KnownTexture known_textures[] = {
     // same two press positions as the HOLD Triangles.
     {0x94d741f6b51815eeULL, Kind::Face, GOW3_PROMPT_CIRCLE, "Uncharted 3 HOLD Circle picture"},
     {0x93b46ba81469882cULL, Kind::Face, GOW3_PROMPT_CIRCLE, "Uncharted 3 HOLD Circle picture (pressed)"},
+    {0x668cf3cc04ab6963ULL, Kind::Face, GOW3_PROMPT_SQUARE, "Uncharted 3 HOLD Square picture"},
+    {0x1b7e089f40b3bb21ULL, Kind::Face, GOW3_PROMPT_SQUARE, "Uncharted 3 HOLD Square picture (pressed)"},
     {0x6c3fc301ede4114aULL, Kind::Shoulder, GOW3_PROMPT_L1, "Uncharted 3 L1 picture"},
     {0x2e8ae3386e2a91ddULL, Kind::Shoulder, GOW3_PROMPT_L2, "Uncharted 3 L2 picture"},
     {0xbd74a617a879f120ULL, Kind::Shoulder, GOW3_PROMPT_R1, "Uncharted 3 R1 picture"},
     {0x784278339a5a55bfULL, Kind::Shoulder, GOW3_PROMPT_R2, "Uncharted 3 R2 picture"},
-    // 20 Oct 2026 (user, Uncharted 3 museum chapter): the d-pad with its up arm lit (256x256),
-    // found with GOW3_PROMPTS_LOG and a dump of the loaded pictures.
+    {0xb88838d137123548ULL, Kind::Shoulder, GOW3_PROMPT_L1, "Uncharted 1/2 L1 picture"},
+    {0x4999c8b20a45cd6dULL, Kind::Shoulder, GOW3_PROMPT_R1, "Uncharted 1/2 R1 picture"},
+    {0x539b560401a1ac83ULL, Kind::Shoulder, GOW3_PROMPT_L2, "Uncharted 1/2 L2 picture"},
+    {0xe2c351d65c6a63f1ULL, Kind::Shoulder, GOW3_PROMPT_R2, "Uncharted 1/2 R2 picture"},
+    // D-pad pictures:
     {0xe8a2f49b992621fcULL, Kind::Dpad, GOW3_PROMPT_UP, "Uncharted 3 d-pad up picture"},
+    {0x705083db743dd2f9ULL, Kind::Dpad, GOW3_PROMPT_UP, "Uncharted 2 d-pad up picture"},
+    {0xde25b56cbba0318fULL, Kind::Dpad, GOW3_PROMPT_UP, "Uncharted 1 d-pad up picture"},
+    // Drake's Journal & Map textures (512x256 BC1):
+    {0xf9e323d0de77089aULL, Kind::Journal, GOW3_PROMPT_TOUCHPAD, "Uncharted 2/3 Drake's Journal (select)"},
+    {0xfd143a2450dbb4ccULL, Kind::Journal, GOW3_PROMPT_TOUCHPAD, "Uncharted 1 Drake's Journal (select)"},
+    {0xbf9e5eb56abdcc3eULL, Kind::Journal, GOW3_PROMPT_TOUCHPAD, "Uncharted 2/3 Drake's Journal (add page)"},
+    {0x3204d997bd026ab3ULL, Kind::Journal, GOW3_PROMPT_TOUCHPAD, "Uncharted Drake's Map (select)"},
 };
 
 // symbol3.fnt, the same in the three games: glyph id and its cell in the atlas.
@@ -117,7 +129,9 @@ constexpr Plan plans[] = {
     {24, Draw::Key, GOW3_PROMPT_L3},         {47, Draw::Key, GOW3_PROMPT_L3},
     {25, Draw::Key, GOW3_PROMPT_R3},         {48, Draw::Key, GOW3_PROMPT_R3},
     {11, Draw::Key, GOW3_PROMPT_OPTIONS},    {44, Draw::Key, GOW3_PROMPT_OPTIONS},
-    {30, Draw::Key, GOW3_PROMPT_TOUCHPAD},   {18, Draw::Key, GOW3_PROMPT_UP},
+    {29, Draw::Key, GOW3_PROMPT_OPTIONS},    {49, Draw::Key, GOW3_PROMPT_OPTIONS},
+    {14, Draw::Key, GOW3_PROMPT_TOUCHPAD},   {30, Draw::Key, GOW3_PROMPT_TOUCHPAD},
+    {18, Draw::Key, GOW3_PROMPT_UP},
     {21, Draw::Key, GOW3_PROMPT_DOWN},       {12, Draw::Pair, GOW3_PROMPT_LEFT, GOW3_PROMPT_RIGHT},
     {13, Draw::Pair, GOW3_PROMPT_UP, GOW3_PROMPT_DOWN}, {1, Draw::Dpad},
     {10, Draw::Stick, GOW3_PROMPT_LS_UP},    {15, Draw::Stick, GOW3_PROMPT_LS_UP},
@@ -179,6 +193,12 @@ struct Canvas {
     std::vector<u8> drawn = std::vector<u8>(size_t(w) * h, 0);
 };
 
+// ---- Button pictures (BC1)
+struct Picture {
+    int w = 0, h = 0;
+    std::vector<u8> rgba; // alpha 0: BC1 punch-through texels
+};
+
 class Painter {
 public:
     // clear: the area starts transparent (atlas cells); otherwise drawing goes over the canvas.
@@ -219,6 +239,8 @@ public:
             }
         }
     }
+
+    Canvas& GetCanvas() { return canvas; }
 
 private:
     void Over(int x, int y, Rgb c, float a) {
@@ -573,12 +595,320 @@ void DrawPadButton(Painter& p, Pass pass, float cx, float cy, float w, float h, 
     }
 }
 
+#pragma pack(push, 1)
+struct PromptAssetHeader {
+    char magic[4];       // 'SPMP'
+    uint32_t version;    // 1
+    uint32_t count;      // 298
+    uint32_t ent_offset; // 32
+    uint32_t dat_offset; // 19104
+    uint8_t reserved[12];
+};
+static_assert(sizeof(PromptAssetHeader) == 32);
+
+struct PromptAssetEntry {
+    char id[32];
+    uint16_t theme;     // 0 = OBSIDIAN, 1 = IVORY
+    uint16_t pw, ph;    // nominal 128 height, width according to aspect
+    uint16_t reserved;
+    float uw, uh;       // physical aspect ratio (1.5, 1.0, 2.25, 6.25, etc.)
+    uint32_t data_offset;
+    uint32_t data_size;
+    uint32_t flags;
+    uint32_t reserved2;
+};
+static_assert(sizeof(PromptAssetEntry) == 64);
+#pragma pack(pop)
+
+class PromptAssetBank {
+public:
+    static PromptAssetBank& Instance() {
+        static PromptAssetBank bank;
+        return bank;
+    }
+
+    PromptAssetBank() {
+        Load();
+    }
+
+    bool IsLoaded() const { return loaded_; }
+
+    const PromptAssetEntry* Find(const std::string& key_or_label, int theme = 0) const {
+        if (!loaded_ || key_or_label.empty()) return nullptr;
+        std::string canon = Canonicalize(key_or_label);
+        for (const auto& e : entries_) {
+            if (e.theme == theme && std::strcmp(e.id, canon.c_str()) == 0) {
+                return &e;
+            }
+        }
+        for (const auto& e : entries_) {
+            if (std::strcmp(e.id, canon.c_str()) == 0) {
+                return &e;
+            }
+        }
+        return nullptr;
+    }
+
+    const uint8_t* GetData(const PromptAssetEntry& entry) const {
+        if (!loaded_) return nullptr;
+        if (size_t(data_offset_ + entry.data_offset + entry.data_size) <= bytes_.size()) {
+            return bytes_.data() + data_offset_ + entry.data_offset;
+        }
+        return nullptr;
+    }
+
+private:
+    bool loaded_ = false;
+    uint32_t data_offset_ = 0;
+    std::vector<uint8_t> bytes_;
+    std::vector<PromptAssetEntry> entries_;
+
+    static std::string ToUpper(std::string s) {
+        for (char& c : s) c = (char)std::toupper((unsigned char)c);
+        return s;
+    }
+
+    static std::string Canonicalize(const std::string& input) {
+        std::string s = ToUpper(input);
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+
+        if (s.empty()) return "";
+        if (s == "TAB") return "TAB";
+        if (s == "SPACE" || s == " ") return "SPACE";
+        if (s == "RETURN" || s == "ENTER") return "ENTER";
+        if (s == "ESC" || s == "ESCAPE") return "ESCAPE";
+        if (s == "BKSP" || s == "BACKSPACE") return "BACKSPACE";
+        if (s == "SHIFT" || s == "LEFT SHIFT" || s == "SHIFT_LEFT" || s == "LSHIFT") return "SHIFT_LEFT";
+        if (s == "RIGHT SHIFT" || s == "SHIFT_RIGHT" || s == "RSHIFT") return "SHIFT_RIGHT";
+        if (s == "CTRL" || s == "LEFT CTRL" || s == "CONTROL_LEFT" || s == "LCTRL") return "CONTROL_LEFT";
+        if (s == "RIGHT CTRL" || s == "CONTROL_RIGHT" || s == "RCTRL") return "CONTROL_RIGHT";
+        if (s == "ALT" || s == "LEFT ALT" || s == "ALT_LEFT" || s == "LALT") return "ALT_LEFT";
+        if (s == "RIGHT ALT" || s == "ALT_RIGHT" || s == "RALT") return "ALT_RIGHT";
+        if (s == "CAPS" || s == "CAPSLOCK" || s == "CAPS_LOCK") return "CAPS_LOCK";
+        if (s == "DEL" || s == "DELETE") return "DELETE";
+        if (s == "INS" || s == "INSERT") return "INSERT";
+        if (s == "HOME") return "HOME";
+        if (s == "END") return "END";
+        if (s == "PGUP" || s == "PAGE_UP") return "PAGE_UP";
+        if (s == "PGDN" || s == "PAGE_DOWN") return "PAGE_DOWN";
+        if (s == "\xe2\x86\x91" || s == "UP" || s == "ARROW_UP") return "ARROW_UP";
+        if (s == "\xe2\x86\x93" || s == "DOWN" || s == "ARROW_DOWN") return "ARROW_DOWN";
+        if (s == "\xe2\x86\x90" || s == "LEFT" || s == "ARROW_LEFT") return "ARROW_LEFT";
+        if (s == "\xe2\x86\x92" || s == "RIGHT" || s == "ARROW_RIGHT") return "ARROW_RIGHT";
+
+        if (s == "@LMB" || s == "MOUSE_LEFT" || s == "LEFT BUTTON") return "MOUSE_LEFT";
+        if (s == "@RMB" || s == "MOUSE_RIGHT" || s == "RIGHT BUTTON") return "MOUSE_RIGHT";
+        if (s == "@MMB" || s == "MOUSE_MIDDLE" || s == "MIDDLE BUTTON") return "MOUSE_MIDDLE";
+        if (s == "@WHEELUP" || s == "WHEEL UP" || s == "MOUSE_SCROLL_UP") return "MOUSE_SCROLL_UP";
+        if (s == "@WHEELDOWN" || s == "WHEEL DOWN" || s == "MOUSE_SCROLL_DOWN") return "MOUSE_SCROLL_DOWN";
+        if (s == "@X1" || s == "BACK BUTTON" || s == "MOUSE_SIDE_1") return "MOUSE_SIDE_1";
+        if (s == "@X2" || s == "FORWARD BUTTON" || s == "MOUSE_SIDE_2") return "MOUSE_SIDE_2";
+
+        if (s.size() == 1 && s[0] >= 'A' && s[0] <= 'Z') {
+            return std::string("KEY_") + s[0];
+        }
+        if (s.size() == 1 && s[0] >= '0' && s[0] <= '9') {
+            return std::string("DIGIT_") + s[0];
+        }
+        return s;
+    }
+
+    void Load() {
+        const char* paths[] = {
+            "gow3_prompt_assets.bin",
+            "Project/gow3_pc/gpu/shim/gow3_prompt_assets.bin",
+            "Project/gow3_pc/out/gow3_prompt_assets.bin",
+            "Distribution/Uncharted/gow3_prompt_assets.bin",
+            "Build/Windows/gow3_prompt_assets.bin",
+            "../Project/gow3_pc/gpu/shim/gow3_prompt_assets.bin",
+            "../../Project/gow3_pc/gpu/shim/gow3_prompt_assets.bin"
+        };
+        for (const char* p : paths) {
+            if (TryLoadFile(p)) return;
+        }
+        char mod[MAX_PATH] = {};
+        if (GetModuleFileNameA(NULL, mod, MAX_PATH) > 0) {
+            char* slash = std::strrchr(mod, '\\');
+            if (!slash) slash = std::strrchr(mod, '/');
+            if (slash) {
+                std::strcpy(slash + 1, "gow3_prompt_assets.bin");
+                if (TryLoadFile(mod)) return;
+            }
+        }
+    }
+
+    bool TryLoadFile(const char* filepath) {
+        FILE* f = std::fopen(filepath, "rb");
+        if (!f) return false;
+        std::fseek(f, 0, SEEK_END);
+        long sz = std::ftell(f);
+        std::fseek(f, 0, SEEK_SET);
+        if (sz < (long)sizeof(PromptAssetHeader)) {
+            std::fclose(f);
+            return false;
+        }
+        bytes_.resize(sz);
+        size_t n = std::fread(bytes_.data(), 1, sz, f);
+        std::fclose(f);
+        if (n != size_t(sz)) {
+            bytes_.clear();
+            return false;
+        }
+        const auto* hdr = reinterpret_cast<const PromptAssetHeader*>(bytes_.data());
+        if (std::memcmp(hdr->magic, "SPMP", 4) != 0 || hdr->version != 1) {
+            bytes_.clear();
+            return false;
+        }
+        data_offset_ = hdr->dat_offset;
+        entries_.resize(hdr->count);
+        for (uint32_t i = 0; i < hdr->count; ++i) {
+            const auto* src_entry = reinterpret_cast<const PromptAssetEntry*>(
+                bytes_.data() + hdr->ent_offset + i * sizeof(PromptAssetEntry));
+            entries_[i] = *src_entry;
+        }
+        loaded_ = true;
+        std::printf("Prompts: loaded %u vector prompt assets from %s\n", hdr->count, filepath);
+        std::fflush(stdout);
+        return true;
+    }
+};
+
+static void BlitAsset(Canvas& canvas, const PromptAssetEntry& entry, const uint8_t* src_rgba,
+                      float cx, float cy, float target_w, float target_h) {
+    const int x0 = std::clamp(int(std::floor(cx - target_w / 2.0f)), 0, canvas.w - 1);
+    const int y0 = std::clamp(int(std::floor(cy - target_h / 2.0f)), 0, canvas.h - 1);
+    const int x1 = std::clamp(int(std::ceil(cx + target_w / 2.0f)), 0, canvas.w);
+    const int y1 = std::clamp(int(std::ceil(cy + target_h / 2.0f)), 0, canvas.h);
+
+    const float src_w = float(entry.pw);
+    const float src_h = float(entry.ph);
+
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            const float u = (float(x) + 0.5f - (cx - target_w / 2.0f)) / target_w * src_w - 0.5f;
+            const float v = (float(y) + 0.5f - (cy - target_h / 2.0f)) / target_h * src_h - 0.5f;
+
+            if (u < -0.5f || u >= src_w - 0.5f || v < -0.5f || v >= src_h - 0.5f) continue;
+
+            const int iu = std::clamp(int(std::floor(u)), 0, int(entry.pw) - 2);
+            const int iv = std::clamp(int(std::floor(v)), 0, int(entry.ph) - 2);
+            const float fu = std::clamp(u - float(iu), 0.0f, 1.0f);
+            const float fv = std::clamp(v - float(iv), 0.0f, 1.0f);
+
+            const auto sample = [&](int su, int sv) -> const uint8_t* {
+                return &src_rgba[(sv * entry.pw + su) * 4];
+            };
+
+            const uint8_t* c00 = sample(iu, iv);
+            const uint8_t* c10 = sample(iu + 1, iv);
+            const uint8_t* c01 = sample(iu, iv + 1);
+            const uint8_t* c11 = sample(iu + 1, iv + 1);
+
+            const float sa = ((c00[3] * (1.0f - fu) + c10[3] * fu) * (1.0f - fv) +
+                              (c01[3] * (1.0f - fu) + c11[3] * fu) * fv) / 255.0f;
+            if (sa <= 0.001f) continue;
+
+            const float sr = ((c00[0] * (1.0f - fu) + c10[0] * fu) * (1.0f - fv) +
+                              (c01[0] * (1.0f - fu) + c11[0] * fu) * fv) / 255.0f;
+            const float sg = ((c00[1] * (1.0f - fu) + c10[1] * fu) * (1.0f - fv) +
+                              (c01[1] * (1.0f - fu) + c11[1] * fu) * fv) / 255.0f;
+            const float sb = ((c00[2] * (1.0f - fu) + c10[2] * fu) * (1.0f - fv) +
+                              (c01[2] * (1.0f - fu) + c11[2] * fu) * fv) / 255.0f;
+
+            float* p = &canvas.texels[(y * canvas.w + x) * 4];
+            p[0] = sr * sa + p[0] * (1.0f - sa);
+            p[1] = sg * sa + p[1] * (1.0f - sa);
+            p[2] = sb * sa + p[2] * (1.0f - sa);
+            p[3] = sa + p[3] * (1.0f - sa);
+            canvas.drawn[y * canvas.w + x] = 1;
+        }
+    }
+}
+
+static void BlitAssetToPicture(Picture& pic, const PromptAssetEntry& entry, const uint8_t* src_rgba,
+                               float cx, float cy, float target_w, float target_h) {
+    const int x0 = std::clamp(int(std::floor(cx - target_w / 2.0f)), 0, pic.w - 1);
+    const int y0 = std::clamp(int(std::floor(cy - target_h / 2.0f)), 0, pic.h - 1);
+    const int x1 = std::clamp(int(std::ceil(cx + target_w / 2.0f)), 0, pic.w);
+    const int y1 = std::clamp(int(std::ceil(cy + target_h / 2.0f)), 0, pic.h);
+
+    const float src_w = float(entry.pw);
+    const float src_h = float(entry.ph);
+
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            const float u = (float(x) + 0.5f - (cx - target_w / 2.0f)) / target_w * src_w - 0.5f;
+            const float v = (float(y) + 0.5f - (cy - target_h / 2.0f)) / target_h * src_h - 0.5f;
+
+            if (u < -0.5f || u >= src_w - 0.5f || v < -0.5f || v >= src_h - 0.5f) continue;
+
+            const int iu = std::clamp(int(std::floor(u)), 0, int(entry.pw) - 2);
+            const int iv = std::clamp(int(std::floor(v)), 0, int(entry.ph) - 2);
+            const float fu = std::clamp(u - float(iu), 0.0f, 1.0f);
+            const float fv = std::clamp(v - float(iv), 0.0f, 1.0f);
+
+            const auto sample = [&](int su, int sv) -> const uint8_t* {
+                return &src_rgba[(sv * entry.pw + su) * 4];
+            };
+
+            const uint8_t* c00 = sample(iu, iv);
+            const uint8_t* c10 = sample(iu + 1, iv);
+            const uint8_t* c01 = sample(iu, iv + 1);
+            const uint8_t* c11 = sample(iu + 1, iv + 1);
+
+            const float sa = ((c00[3] * (1.0f - fu) + c10[3] * fu) * (1.0f - fv) +
+                              (c01[3] * (1.0f - fu) + c11[3] * fu) * fv) / 255.0f;
+            if (sa <= 0.001f) continue;
+
+            const float sr = (c00[0] * (1.0f - fu) + c10[0] * fu) * (1.0f - fv) +
+                             (c01[0] * (1.0f - fu) + c11[0] * fu) * fv;
+            const float sg = (c00[1] * (1.0f - fu) + c10[1] * fu) * (1.0f - fv) +
+                             (c01[1] * (1.0f - fu) + c11[1] * fu) * fv;
+            const float sb = (c00[2] * (1.0f - fu) + c10[2] * fu) * (1.0f - fv) +
+                             (c01[2] * (1.0f - fu) + c11[2] * fu) * fv;
+
+            uint8_t* p = &pic.rgba[(y * pic.w + x) * 4];
+            p[0] = uint8_t(std::clamp(sr * sa + p[0] * (1.0f - sa) + 0.5f, 0.0f, 255.0f));
+            p[1] = uint8_t(std::clamp(sg * sa + p[1] * (1.0f - sa) + 0.5f, 0.0f, 255.0f));
+            p[2] = uint8_t(std::clamp(sb * sa + p[2] * (1.0f - sa) + 0.5f, 0.0f, 255.0f));
+            p[3] = 255;
+        }
+    }
+}
+
 using Labels = std::vector<std::string>;
 
 // One binding in a w x h area: a key cap fitted to its label, the mouse, or a controller button.
 void DrawBinding(Painter& p, Pass pass, float cx, float cy, float w, float h, const std::string& label) {
     if (!label.empty() && label[0] == '#') {
         DrawPadButton(p, pass, cx, cy, w, h, label);
+        return;
+    }
+    const auto* asset = PromptAssetBank::Instance().Find(label, 0);
+    if (asset) {
+        float aspect = asset->uw / asset->uh;
+        if (aspect > 2.5f && w / h < 2.0f) {
+            float kw = h;
+            if (Codepoints(label).size() > 1) {
+                const size_t chars = Codepoints(label).size();
+                kw = std::clamp(Text::Width(label, 0.42f * h, LabelCondense(chars)) + 0.4f * h, h, w);
+            }
+            DrawKey(p, pass, cx, cy, std::min(kw, w), h, label);
+            return;
+        }
+        if (pass == Pass::Body) {
+            const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
+            if (src) {
+                float th = h;
+                float tw = th * aspect;
+                if (tw > w) {
+                    tw = w;
+                    th = tw / aspect;
+                }
+                BlitAsset(p.GetCanvas(), *asset, src, cx, cy, tw, th);
+            }
+        }
         return;
     }
     const MousePart part = MousePartOf(label);
@@ -726,11 +1056,6 @@ std::vector<u8> Compose(const Canvas& canvas, const u8* guest, Kind kind) {
 }
 
 // ---- Button pictures (BC1)
-struct Picture {
-    int w = 0, h = 0;
-    std::vector<u8> rgba; // alpha 0: BC1 punch-through texels
-};
-
 Rgb Decode565(u32 c) {
     return {float((c >> 11) & 31) / 31.0f, float((c >> 5) & 63) / 63.0f, float(c & 31) / 31.0f};
 }
@@ -940,6 +1265,21 @@ void DrawPictureLabel(Painter& p, const std::string& label, float cx, float cy, 
                       Rgb color) {
     if (label.empty()) {
         return;
+    }
+    const auto* asset = PromptAssetBank::Instance().Find(label, 0);
+    if (asset) {
+        const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
+        if (src) {
+            float aspect = asset->uw / asset->uh;
+            float th = height * 0.92f;
+            float tw = th * aspect;
+            if (tw > max_width) {
+                tw = max_width;
+                th = tw / aspect;
+            }
+            BlitAsset(p.GetCanvas(), *asset, src, cx, cy, tw, th);
+            return;
+        }
     }
     const MousePart part = MousePartOf(label);
     if (part != MousePart::None) {
@@ -1163,6 +1503,64 @@ void RedrawDpad(Picture& pic, const std::string& label) {
     FromCanvas(canvas, pic);
 }
 
+// Drake's Journal & Map pictures (512x256 BC1, upright):
+// Preserves the leather journal / antique map on the left (x < 192), clears the PS4 touchpad badge,
+// and blits the authentic vector keycap (TAB or configured key) preserving physical 1.5U proportions.
+void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool is_map) {
+    const int w = pic.w, h = pic.h;
+    if (w < 512 || h < 256) return;
+
+    const float cx = is_map ? 238.5f : 248.0f;
+    const float cy = is_map ? 163.5f : 157.0f;
+    const int bx0 = is_map ? 180 : 192;
+    const int bx1 = is_map ? 298 : 305;
+    const int by0 = 93;
+    const int by1 = is_map ? 235 : 222;
+
+    for (int y = by0; y <= by1; ++y) {
+        for (int x = bx0; x <= bx1; ++x) {
+            uint8_t* p = &pic.rgba[(y * w + x) * 4];
+            float luma = 0.3f * p[0] + 0.59f * p[1] + 0.11f * p[2];
+            if (luma > 75.0f) {
+                p[0] = 52; p[1] = 50; p[2] = 46; p[3] = 255;
+            }
+        }
+    }
+
+    if (!controller) {
+        std::string effective_key = label.empty() ? "TAB" : label;
+        const auto* asset = PromptAssetBank::Instance().Find(effective_key, 0);
+        if (!asset) asset = PromptAssetBank::Instance().Find("TAB", 0);
+        if (asset) {
+            const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
+            if (src) {
+                float th = 68.0f;
+                float tw = th * (asset->uw / asset->uh);
+                BlitAssetToPicture(pic, *asset, src, cx, cy, tw, th);
+                return;
+            }
+        }
+    } else {
+        Canvas canvas = ToCanvas(pic);
+        Painter p{canvas, bx0, by0, bx1 + 1, by1 + 1, false};
+        const float r = 24.0f;
+        const float edge = 2.0f;
+        DrawShape(p, Pass::Glow, [=](float x, float y) { return std::hypot(x - cx, y - cy) - r; }, edge, cy - r,
+                  2 * r, glow, "", cx, cy, 0, 0, ink);
+        DrawShape(p, Pass::Body, [=](float x, float y) { return std::hypot(x - cx, y - cy) - r; }, edge, cy - r,
+                  2 * r, glow, "", cx, cy, 0, 0, ink);
+        const float line = 2.0f;
+        const float s = 7.0f;
+        p.Fill([=](float x, float y) {
+            return std::fabs(RoundBox(x, y, cx - 3.5f, cy - 3.5f, s, s, 1.5f)) - line * 0.8f;
+        }, ink);
+        p.Fill([=](float x, float y) {
+            return RoundBox(x, y, cx + 3.5f, cy + 3.5f, s, s, 1.5f);
+        }, ink);
+        FromCanvas(canvas, pic);
+    }
+}
+
 // Label sets: keyboard and mouse, other controllers. Device: which icons show (GOW3_PROMPT_*).
 constexpr int Sets = 2;
 int SetOf(int device) {
@@ -1218,6 +1616,8 @@ std::shared_ptr<const Texels> MakePicture(const KnownTexture& known, const u8* g
         RedrawFace(pic, label, controller);
     } else if (known.kind == Kind::Dpad) {
         RedrawDpad(pic, label);
+    } else if (known.kind == Kind::Journal) {
+        RedrawJournal(pic, label, controller, known.hash == 0x3204d997bd026ab3ULL);
     } else {
         RedrawShoulder(pic, label);
     }
@@ -1254,7 +1654,7 @@ std::shared_ptr<const Texels> Replacement(VAddr address, u32 guest_size, u32 mip
     const KnownTexture* known = nullptr;
     for (const auto& k : known_textures) {
         if (k.hash == hash &&
-            (k.kind == Kind::Face || k.kind == Kind::Shoulder || k.kind == Kind::Dpad) == picture) {
+            (k.kind == Kind::Face || k.kind == Kind::Shoulder || k.kind == Kind::Dpad || k.kind == Kind::Journal) == picture) {
             known = &k;
         }
     }
@@ -1301,6 +1701,9 @@ std::shared_ptr<const Texels> Replacement(VAddr address, u32 guest_size, u32 mip
     std::string label;
     if (picture) {
         label = state.labels[set][known->button];
+        if (label.empty() && known->kind == Kind::Journal) {
+            label = "TAB";
+        }
         if (label.empty()) {
             return nullptr;
         }

@@ -95,13 +95,16 @@ public class LauncherConfig
         {
             paths.Add(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "UnchartedSicParvisMagna",
+                "launcher.json"));
+            paths.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "UnchartedSicParvisMagna",
+                "launcher.json"));
+            paths.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "Uncharted Launcher",
                 "launcher.json"));
-        }
-        catch { }
-
-        try
-        {
             paths.Add(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "UnchartedLauncher",
@@ -152,65 +155,69 @@ public class LauncherConfig
             catch { }
         }
 
+        bool hasJsonConfig = (loaded != null);
         if (loaded == null)
         {
             loaded = new LauncherConfig();
         }
 
-        // Import settings from existing EngineConfig.ini or gow3.ini if present
-        try
+        // Only import settings from existing EngineConfig.ini or gow3.ini if NO json config exists (first-time migration)
+        if (!hasJsonConfig)
         {
-            string ws = workspaceRoot ?? ResolveWorkspaceRoot();
-            string[] iniCandidates = {
-                Path.Combine(ws, "Project", "EngineConfig.ini"),
-                Path.Combine(ws, "Project", "gow3.ini"),
-                Path.Combine(ws, "EngineConfig.ini")
-            };
-
-            foreach (var ini in iniCandidates)
+            try
             {
-                if (File.Exists(ini))
-                {
-                    foreach (var line in File.ReadAllLines(ini))
-                    {
-                        var trimmed = line.Trim();
-                        if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#") || trimmed.StartsWith(";")) continue;
-                        int eq = trimmed.IndexOf('=');
-                        if (eq <= 0) continue;
-                        string key = trimmed[..eq].Trim().ToLowerInvariant();
-                        string val = trimmed[(eq + 1)..].Trim();
+                string ws = workspaceRoot ?? ResolveWorkspaceRoot();
+                string[] iniCandidates = {
+                    Path.Combine(ws, "Project", "EngineConfig.ini"),
+                    Path.Combine(ws, "Project", "gow3.ini"),
+                    Path.Combine(ws, "EngineConfig.ini")
+                };
 
-                        switch (key)
+                foreach (var ini in iniCandidates)
+                {
+                    if (File.Exists(ini))
+                    {
+                        foreach (var line in File.ReadAllLines(ini))
                         {
-                            case "graphics_api": if (!string.IsNullOrEmpty(val)) loaded.GraphicsApi = val; break;
-                            case "vram_budget_mb": if (!string.IsNullOrEmpty(val)) loaded.VramBudgetMb = val; break;
-                            case "frame_pacer": if (!string.IsNullOrEmpty(val)) loaded.FramePacingMode = val; break;
-                            case "fps_limit": if (!string.IsNullOrEmpty(val)) loaded.FpsLimit = val; break;
-                            case "vsync": if (!string.IsNullOrEmpty(val)) loaded.VSync = val; break;
-                            case "texture_quality": if (!string.IsNullOrEmpty(val)) loaded.TextureQuality = val; break;
-                            case "shadow_quality": if (!string.IsNullOrEmpty(val)) loaded.ShadowQuality = val; break;
-                            case "dynamic_shadows": if (!string.IsNullOrEmpty(val)) loaded.DynamicShadows = val; break;
-                            case "view_distance": if (!string.IsNullOrEmpty(val)) loaded.ViewDistance = val; break;
-                            case "mouse_sens": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double ms)) loaded.MouseSensitivity = ms; break;
-                            case "mouse_aim_sens": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double mas)) loaded.MouseAimSensitivity = mas; break;
-                            case "mouse_vertical": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double mv)) loaded.MouseVerticalSensitivity = mv; break;
-                            case "mouse_invert": loaded.MouseInvertY = val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
-                            case "mouse_invert_x": loaded.MouseInvertX = val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
-                            case "stick_speed": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double ss)) loaded.StickSpeed = ss; break;
-                            case "vibration": loaded.Vibration = val != "0" && !val.Equals("false", StringComparison.OrdinalIgnoreCase); break;
-                            case "prompts": if (!string.IsNullOrEmpty(val)) loaded.Prompts = val; break;
-                            case "key_map": if (!string.IsNullOrEmpty(val)) loaded.KeyMap = val; break;
-                            case "pad_map": if (!string.IsNullOrEmpty(val)) loaded.PadMap = val; break;
-                            case "mouse_map": if (!string.IsNullOrEmpty(val)) loaded.MouseMap = val; break;
-                            case "gpu_name": if (!string.IsNullOrEmpty(val)) loaded.GpuName = val; break;
-                            case "gpu_id": if (!string.IsNullOrEmpty(val)) loaded.GpuId = val; break;
+                            var trimmed = line.Trim();
+                            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#") || trimmed.StartsWith(";")) continue;
+                            int eq = trimmed.IndexOf('=');
+                            if (eq <= 0) continue;
+                            string key = trimmed[..eq].Trim().ToLowerInvariant();
+                            string val = trimmed[(eq + 1)..].Trim();
+
+                            switch (key)
+                            {
+                                case "graphics_api": if (!string.IsNullOrEmpty(val)) loaded.GraphicsApi = val; break;
+                                case "vram_budget_mb": if (!string.IsNullOrEmpty(val)) loaded.VramBudgetMb = val; break;
+                                case "frame_pacer": if (!string.IsNullOrEmpty(val)) loaded.FramePacingMode = val; break;
+                                case "fps_limit": if (!string.IsNullOrEmpty(val)) loaded.FpsLimit = val; break;
+                                case "vsync": if (!string.IsNullOrEmpty(val)) loaded.VSync = val; break;
+                                case "texture_quality": if (!string.IsNullOrEmpty(val)) loaded.TextureQuality = val; break;
+                                case "shadow_quality": if (!string.IsNullOrEmpty(val)) loaded.ShadowQuality = val; break;
+                                case "dynamic_shadows": if (!string.IsNullOrEmpty(val)) loaded.DynamicShadows = val; break;
+                                case "view_distance": if (!string.IsNullOrEmpty(val)) loaded.ViewDistance = val; break;
+                                case "mouse_sens": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double ms)) loaded.MouseSensitivity = ms; break;
+                                case "mouse_aim_sens": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double mas)) loaded.MouseAimSensitivity = mas; break;
+                                case "mouse_vertical": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double mv)) loaded.MouseVerticalSensitivity = mv; break;
+                                case "mouse_invert": loaded.MouseInvertY = val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                                case "mouse_invert_x": loaded.MouseInvertX = val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                                case "stick_speed": if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double ss)) loaded.StickSpeed = ss; break;
+                                case "vibration": loaded.Vibration = val != "0" && !val.Equals("false", StringComparison.OrdinalIgnoreCase); break;
+                                case "prompts": if (!string.IsNullOrEmpty(val)) loaded.Prompts = val; break;
+                                case "key_map": if (!string.IsNullOrEmpty(val)) loaded.KeyMap = val; break;
+                                case "pad_map": if (!string.IsNullOrEmpty(val)) loaded.PadMap = val; break;
+                                case "mouse_map": if (!string.IsNullOrEmpty(val)) loaded.MouseMap = val; break;
+                                case "gpu_name": if (!string.IsNullOrEmpty(val)) loaded.GpuName = val; break;
+                                case "gpu_id": if (!string.IsNullOrEmpty(val)) loaded.GpuId = val; break;
+                            }
                         }
+                        break;
                     }
-                    break;
                 }
             }
+            catch { }
         }
-        catch { }
 
         return loaded;
     }
