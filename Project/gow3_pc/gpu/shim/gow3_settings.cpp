@@ -20,7 +20,13 @@ namespace {
 
 const char* Path() {
     const char* env = std::getenv("GOW3_CONFIG");
-    return env && env[0] ? env : "gow3.ini";
+    if (env && env[0]) return env;
+    FILE* f = std::fopen("EngineConfig.ini", "r");
+    if (f) {
+        std::fclose(f);
+        return "EngineConfig.ini";
+    }
+    return "gow3.ini";
 }
 
 float Clamp(float v, float lo, float hi) {

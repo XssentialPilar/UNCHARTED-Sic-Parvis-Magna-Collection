@@ -47,6 +47,9 @@ public class GameRunner
         };
 
         // Strict environment enforcement
+        string engineConfigPath = Path.Combine(workspaceRoot, "Project", "EngineConfig.ini");
+        psi.Environment["GOW3_CONFIG"] = engineConfigPath;
+        psi.Environment["UNCHARTED_CONFIG_FILE"] = engineConfigPath;
         psi.Environment["GOW3_GRAPHICS_API"] = config.GraphicsApi;
         psi.Environment["GOW3_VRAM_BUDGET_MB"] = config.VramBudgetMb;
         psi.Environment["GOW3_FRAME_PACER"] = config.FramePacingMode;

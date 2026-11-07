@@ -1767,6 +1767,19 @@ class Launcher:
         self.ini.update(shared)
         self.ini_seen = ini_mtime(self.config["game"])
 
+        engine_cfg_content = (
+            "# Uncharted Global Engine Configuration (Sic Parvis Magna Collection)\n"
+            f"graphics_api={shared['graphics_api']}\n"
+            f"vram_budget_mb={shared['vram_budget_mb']}\n"
+            f"frame_pacer={shared['frame_pacer']}\n"
+            f"deferred_readback=1\nstale_readback=1\n"
+        )
+        for ep in (ROOT / "EngineConfig.ini", ROOT / "gow3.ini", ROOT.parent / "EngineConfig.ini", user_dir() / "EngineConfig.ini"):
+            try:
+                ep.write_text(engine_cfg_content, encoding="utf-8")
+            except Exception:
+                pass
+
     # -- Explorer's Desk Canvas & Navigation ------------------------------------------------
 
     def nav_items(self):
@@ -3674,6 +3687,9 @@ class Launcher:
         shad_q = self.config.get("shadow_quality", "medium")
 
         # Presentation API, Strict VRAM Cap & Sub-ms Frame Pacer
+        engine_cfg_path = str(ROOT / "EngineConfig.ini")
+        env["GOW3_CONFIG"] = engine_cfg_path
+        env["UNCHARTED_CONFIG_FILE"] = engine_cfg_path
         env["GOW3_GRAPHICS_API"] = api
         env["GOW3_VRAM_BUDGET_MB"] = vram_cap
         env["GOW3_FRAME_PACER"] = pacer

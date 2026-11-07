@@ -1549,9 +1549,13 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     # Settings per game (the launcher keeps them apart): the started game's own, also when the
     # Collection menu switches games.
     game_key = GAME_KEYS[executable]
-    settings_file = Path(os.environ.get("UNCHARTED_CONFIG_FILE") or (user / f"probe-{game_key}.ini"))
-    if not settings_file.exists() and (user / "probe.ini").exists():
-        settings_file = user / "probe.ini"
+    engine_config = ROOT / "EngineConfig.ini"
+    if engine_config.exists():
+        settings_file = engine_config
+    else:
+        settings_file = Path(os.environ.get("UNCHARTED_CONFIG_FILE") or (user / f"probe-{game_key}.ini"))
+        if not settings_file.exists() and (user / "probe.ini").exists():
+            settings_file = user / "probe.ini"
     ini_api = ini_value(settings_file, "graphics_api", "dx11")
     raw_api = (os.environ.get("GOW3_GRAPHICS_API") or ini_api or "dx11").strip().lower()
     if raw_api in ("d3d11", "dx11"):
@@ -1622,6 +1626,8 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     tex_q = os.environ.get("GOW3_TEXTURE_QUALITY", "medium").strip().lower() or "medium"
     shad_q = os.environ.get("GOW3_SHADOW_QUALITY", "medium").strip().lower() or "medium"
     ssao_q = os.environ.get("GOW3_SSAO_QUALITY", "full").strip().lower() or "full"
+    env["GOW3_CONFIG"] = str(engine_config if engine_config.exists() else settings_file)
+    env["UNCHARTED_CONFIG_FILE"] = env["GOW3_CONFIG"]
     env["GOW3_GRAPHICS_API"] = api
     env["GOW3_FRAME_PACER"] = pacer
     if vram_budget_mb > 0:

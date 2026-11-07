@@ -93,6 +93,8 @@ inline std::atomic<unsigned long> gpu_thread_id{0}; ///< Windows thread id of th
 inline std::atomic<std::uint64_t> draws{0}, dispatches{0}, submissions{0};
 /// Frames the GPU command thread has started (display pass), for per-frame diagnostics.
 inline std::atomic<std::uint64_t> gpu_frames{0};
+/// Last frame delta in milliseconds for dynamic PCIe transfer pacing.
+inline std::atomic<double> last_frametime_ms{16.666};
 /// Wall time spent in operations suspected of stalls (ns, all threads).
 inline std::atomic<std::uint64_t> t_resident{0}, t_protect{0}, t_image_create{0}, t_refresh{0},
     t_staging{0}, t_host_wait{0}, t_copy{0}, copy_bytes{0}, t_read_faults{0}, read_faults{0},

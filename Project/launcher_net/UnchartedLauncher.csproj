@@ -10,6 +10,8 @@
     <RootNamespace>UnchartedLauncher</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="../launcher/assets/spm_desk_bg.png" Link="Assets/spm_desk_bg.png" />

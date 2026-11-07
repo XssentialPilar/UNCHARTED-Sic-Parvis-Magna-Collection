@@ -132,6 +132,7 @@ file(GLOB NEW_GLOB LIST_DIRECTORIES true "C:/Users/DiegoPorro/Downloads/Uncharte
 set(OLD_GLOB
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/gow3_actors.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/gow3_copy.cpp"
+  "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/gow3_dxgi_presenter.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/gow3_fiber.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/gow3_fiber_context.cpp"
   "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/shim/gow3_mouse.cpp"

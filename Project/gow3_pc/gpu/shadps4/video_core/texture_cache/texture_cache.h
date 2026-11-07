@@ -514,6 +514,16 @@ private:
     void GarbageCollectImages();
     void GarbageCollectSamplers();
 
+    struct WarmSlab {
+        UniqueImage backing;
+        u32 width{0};
+        u32 height{0};
+        vk::Format format{vk::Format::eUndefined};
+        u64 release_tick{0};
+    };
+    static constexpr u64 kWarmSlabLifetimeTicks = 300; // 300 frames retention
+    std::vector<WarmSlab> warm_slab_pool;
+
 private:
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;

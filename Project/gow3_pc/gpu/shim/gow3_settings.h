@@ -134,8 +134,8 @@ struct Values {
     std::atomic<int> fade_distance{100}, sun_shadow_distance{100}, light_shadow_distance{100};
     /// SPM presentation API (0 = vulkan, 1 = dx11, 2 = dx12), strict VRAM budget cap in MiB,
     /// and frame pacer mode (0 = hybrid, 1 = timer, 2 = spin, 3 = off).
-    std::atomic<int> graphics_api{0};
-    std::atomic<int> vram_budget_mb{0};
+    std::atomic<int> graphics_api{1}; // 1 = dx11 by default
+    std::atomic<int> vram_budget_mb{1720}; // 1720 MiB default budget
     std::atomic<int> frame_pacer_mode{0};
 
     /// Startup settings for the explicit GOW3_RENDER_RES compatibility patch only.

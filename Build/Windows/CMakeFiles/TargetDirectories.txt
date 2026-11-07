@@ -65,6 +65,7 @@ C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/uc2mp-lan-
 C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/uc2mp-spawn-test.dir
 C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/uc2mp-tick-test.dir
 C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/spm-invariants-test.dir
+C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/dxgi-presenter-test.dir
 C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/edit_cache.dir
 C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/rebuild_cache.dir
 C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/CMakeFiles/list_install_components.dir
