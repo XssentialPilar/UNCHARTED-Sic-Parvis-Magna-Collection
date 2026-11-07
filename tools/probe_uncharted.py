@@ -934,7 +934,18 @@ def apply_patches(image, patches):
 def game_executable():
     """The runtime as Uncharted.exe (Task Manager, Windows' graphics settings and overlays show
     this name), copied from the build output whenever that is newer."""
-    built = ROOT / "gow3_pc/out/gow3-probe.exe"
+    candidates = [
+        ROOT.parent / "Build/Windows/gow3-probe.exe",
+        ROOT / "../Build/Windows/gow3-probe.exe",
+        ROOT / "gow3_pc/out/gow3-probe.exe",
+    ]
+    built = None
+    for cand in candidates:
+        if cand.exists():
+            if built is None or cand.stat().st_mtime > built.stat().st_mtime:
+                built = cand
+    if built is None:
+        built = ROOT / "gow3_pc/out/gow3-probe.exe"
     game_exe = ROOT / "gow3_pc/out/Uncharted.exe"
     if os.environ.get("UNCHARTED_TEST_PROBE_EXE") == "1":  # test: not under the game's name
         return built
@@ -948,6 +959,12 @@ def game_executable():
         if not game_exe.exists() or built_stat.st_mtime != game_exe.stat().st_mtime or \
                 built_stat.st_size != game_exe.stat().st_size:
             shutil.copy2(built, game_exe)
+        out_probe = ROOT / "gow3_pc/out/gow3-probe.exe"
+        if built.resolve() != out_probe.resolve() and (
+            not out_probe.exists() or built_stat.st_mtime != out_probe.stat().st_mtime or
+            built_stat.st_size != out_probe.stat().st_size
+        ):
+            shutil.copy2(built, out_probe)
     except OSError as error:  # still running from a previous start: use the build output
         print(f"Using {built.name}: {error}")
         return built
@@ -1532,13 +1549,32 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     # Settings per game (the launcher keeps them apart): the started game's own, also when the
     # Collection menu switches games.
     game_key = GAME_KEYS[executable]
+    settings_file = Path(os.environ.get("UNCHARTED_CONFIG_FILE") or (user / f"probe-{game_key}.ini"))
+    if not settings_file.exists() and (user / "probe.ini").exists():
+        settings_file = user / "probe.ini"
+    ini_api = ini_value(settings_file, "graphics_api", "dx11")
+    raw_api = (os.environ.get("GOW3_GRAPHICS_API") or ini_api or "dx11").strip().lower()
+    if raw_api in ("d3d11", "dx11"):
+        api = "dx11"
+    elif raw_api in ("d3d12", "dx12"):
+        api = "dx12"
+    elif raw_api in ("vk", "vulkan"):
+        api = "vulkan"
+    else:
+        api = "dx11"
+
+    ini_vram = ini_value(settings_file, "vram_budget_mb", "1720")
+    raw_vram_budget = (os.environ.get("GOW3_VRAM_BUDGET_MB") or ini_vram or "1720").strip()
+    vram_budget_mb = int(raw_vram_budget) if raw_vram_budget.isdigit() else 0
+
+    ini_pacer = ini_value(settings_file, "frame_pacer", "hybrid")
+    pacer = (os.environ.get("GOW3_FRAME_PACER") or ini_pacer or "hybrid").strip().lower()
+
     resolution = (os.environ.get(f"UNCHARTED_RESOLUTION_{game_key.upper()}")
                   or os.environ.get("UNCHARTED_RESOLUTION", "")).lower()
     width, height = (int(value) for value in resolution.split("x")) if resolution else (1920, 1080)
     requested_output = (os.environ.get(f"UNCHARTED_OUTPUT_RES_{game_key.upper()}")
                         or os.environ.get("UNCHARTED_OUTPUT_RES", "")).lower()
-    raw_vram_budget = os.environ.get("GOW3_VRAM_BUDGET_MB", "").strip()
-    vram_budget_mb = int(raw_vram_budget) if raw_vram_budget.isdigit() else 0
     if 0 < vram_budget_mb <= 1024 and height > 720 and os.environ.get("UNCHARTED_ALLOW_OVERSIZE_VRAM") != "1":
         if not requested_output:
             requested_output = f"{width}x{height}"
@@ -1583,11 +1619,9 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     else:
         extra_mib = 0
     env = os.environ.copy()
-    api = os.environ.get("GOW3_GRAPHICS_API", "vulkan").strip().lower() or "vulkan"
     tex_q = os.environ.get("GOW3_TEXTURE_QUALITY", "medium").strip().lower() or "medium"
     shad_q = os.environ.get("GOW3_SHADOW_QUALITY", "medium").strip().lower() or "medium"
     ssao_q = os.environ.get("GOW3_SSAO_QUALITY", "full").strip().lower() or "full"
-    pacer = os.environ.get("GOW3_FRAME_PACER", "hybrid").strip().lower() or "hybrid"
     env["GOW3_GRAPHICS_API"] = api
     env["GOW3_FRAME_PACER"] = pacer
     if vram_budget_mb > 0:

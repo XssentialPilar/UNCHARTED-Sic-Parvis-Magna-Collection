@@ -4131,7 +4131,7 @@ void BufferCache::ReclaimArenaMemory() {
         const char* env = std::getenv("GOW3_ARENA_RECLAIM_AGE_S");
         const char* vram_env = std::getenv("GOW3_VRAM_BUDGET_MB");
         const u64 budget_mib = (vram_env && vram_env[0]) ? std::strtoull(vram_env, nullptr, 10) : 0;
-        const int default_age = (Vulkan::g_low_video_memory || (budget_mib > 0 && budget_mib <= 2560)) ? 8 : 30;
+        const int default_age = (Vulkan::g_low_video_memory || (budget_mib > 0 && budget_mib <= 2560)) ? 4 : 30;
         const int seconds = env && env[0] ? std::atoi(env) : default_age;
         return static_cast<u16>(std::clamp(seconds, 6, 2 * (int(ReclaimEpochRing) - 4)) / 2);
     }();

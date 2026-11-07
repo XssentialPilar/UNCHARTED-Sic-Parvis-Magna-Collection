@@ -1882,7 +1882,23 @@ void TextureCache::GarbageCollectImages() {
             next_reading = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
         }
     }
-    if (total_used_memory < trigger_gc_memory) {
+    // Proactively evict non-visible area textures: periodically sweep stale textures
+    // that have not been drawn or touched in recent frames (~1.2 - 2 seconds),
+    // freeing VRAM before Drake enters adjacent complex rooms.
+    static const bool is_low_vram_target = [] {
+        const char* env = std::getenv("GOW3_LOW_VRAM");
+        if (env && env[0] && env[0] != '0') return true;
+        for (const char* var : {"GOW3_VRAM_BUDGET_MB", "GOW3_GC_BUDGET_MB"}) {
+            if (const char* v = std::getenv(var); v && v[0]) {
+                const u64 mb = std::strtoull(v, nullptr, 10);
+                if (mb > 0 && mb <= 2560) return true;
+            }
+        }
+        return false;
+    }();
+    const bool is_low_vram = is_low_vram_target || (total_used_memory <= (u64{2560} << 20));
+    const bool periodic_stale_sweep = (gc_tick % (is_low_vram ? 30 : 60) == 0);
+    if (total_used_memory < trigger_gc_memory && !periodic_stale_sweep) {
         return;
     }
     std::scoped_lock lock{mutex};
@@ -1894,8 +1910,20 @@ void TextureCache::GarbageCollectImages() {
     const auto configure = [&](bool allow_aggressive) {
         pressured = total_used_memory >= pressure_gc_memory;
         aggresive = allow_aggressive && total_used_memory >= critical_gc_memory;
-        ticks_to_destroy = GcAge(pressured, aggresive);
-        num_deletions = aggresive ? 40 : pressured ? 20 : 10;
+        if (total_used_memory < trigger_gc_memory) {
+            // Periodic stale sweep: actively reclaim textures from non-visible areas
+            // that have been untouched for ~1.2 - 2 seconds (75-120 ticks).
+            ticks_to_destroy = is_low_vram ? 75 : 120;
+            num_deletions = is_low_vram ? 32 : 16;
+        } else {
+            ticks_to_destroy = GcAge(pressured, aggresive);
+            if (is_low_vram) {
+                ticks_to_destroy = aggresive ? 12 : (pressured ? 40 : 80);
+                num_deletions = aggresive ? 64 : (pressured ? 32 : 24);
+            } else {
+                num_deletions = aggresive ? 64 : (pressured ? 32 : 16);
+            }
+        }
     };
     const auto clean_up = [&](ImageId image_id) {
         if (num_deletions == 0) {
