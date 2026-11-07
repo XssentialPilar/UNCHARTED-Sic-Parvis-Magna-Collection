@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <set>
+#include <tuple>
 #include <new>
 #include <ranges>
 #include <string>
@@ -334,6 +336,16 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
       desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
     sel.regs = &liverpool->regs;
     const auto& vk12_props = instance.GetVk12Properties();
+    // gow3 5 Nov 2026: 1024-thread skinning workgroups as 4 of 256 on NVIDIA (Shader::WorkgroupSplit,
+    // runtime_info.h). Set before any shader is loaded: the split shaders have their own cache names.
+    {
+        const char* env = std::getenv("GOW3_WORKGROUP_SPLIT");
+        Shader::WorkgroupSplitOn() =
+            env && env[0] ? env[0] == '1'
+                          : instance.GetDriverID() == vk::DriverId::eNvidiaProprietary;
+        std::printf("GPU: skinning shaders' 1024-thread workgroups %s (GOW3_WORKGROUP_SPLIT)\n",
+                    Shader::WorkgroupSplitOn() ? "run as 4 workgroups of 256" : "run whole");
+    }
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
         .max_viewport_height = instance.GetMaxViewportHeight(),
@@ -598,7 +610,8 @@ void PipelineCache::PublishShaders(bool wait) {
         const auto perm_hash = HashCombine(hash, build->permutation);
         Vulkan::SetObjectName(instance.GetDevice(), build->module,
                              GetShaderName(build->info.hw_stage, hash, build->permutation));
-        RegisterShaderBinary(std::move(build->binary), hash, build->permutation);
+        RegisterShaderBinary(std::move(build->binary), hash, build->permutation,
+                             build->info.hw_stage == Shader::HwStage::Compute);
         {
             std::unique_lock lock{programs_mutex};
             if (build->initial) {
@@ -928,7 +941,7 @@ void PipelineCache::Adopt(PrecompiledCompute& job) {
     }
     auto& program = job.program;
     const u64 perm_hash = HashCombine(job.hash, 0);
-    RegisterShaderBinary(std::move(job.spirv), job.hash, 0);
+    RegisterShaderBinary(std::move(job.spirv), job.hash, 0, true); // compute precompile
     // user_data pointed into the job's registers: refreshed by the next lookup.
     program->info.user_data = {};
     RegisterShaderMeta(program->info, program->modules[0].spec.fetch_shader_data,
@@ -1564,7 +1577,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         module = CompileSPV(spv, instance.GetDevice());
     }
 
-    RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
+    RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx,
+                         info.hw_stage == Shader::HwStage::Compute);
 
     const auto name = GetShaderName(info.hw_stage, info.pgm_hash, perm_idx);
     Vulkan::SetObjectName(instance.GetDevice(), module, name);
@@ -1619,9 +1633,23 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
             return {};
         }
         runtime_fault_recover = &recover;
-        info.RefreshFlatBuf();
-        auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
+        // gow3 5 Nov 2026: a GPU library assertion on this guess (stale or garbage tables, mostly
+        // after "garbage T#/V#" warnings) throws here and the draw is left to the GPU thread, as
+        // for the compute precompile; it stopped the game with exit 23 before.
+        std::optional<Shader::StageSpecialization> guessed;
+        gow3_assert_throws = true;
+        try {
+            info.RefreshFlatBuf();
+            guessed.emplace(info, runtime_info, profile, binding);
+        } catch (...) {
+        }
+        gow3_assert_throws = false;
         runtime_fault_recover = nullptr;
+        if (!guessed) {
+            worker.failed = true;
+            return {};
+        }
+        auto& spec = *guessed;
         const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
         if (it == program->modules.end()) {
             worker.failed = true;
@@ -1757,6 +1785,24 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         module = it->module;
         perm_idx = std::distance(program->modules.begin(), it);
         perm_hash = HashCombine(params.hash, perm_idx);
+        // gow3 6 Nov 2026: a compute permutation built for another LDS size (its shared array has
+        // that size): logged once per shader and size pair (GOW3_LDS_SIZE_KEY=1 keys them apart).
+        if (hw_stage == Shader::HwStage::Compute &&
+            it->spec.runtime_info.hw.cs.shared_memory_size !=
+                runtime_info.hw.cs.shared_memory_size) {
+            static std::mutex lds_mutex;
+            static std::set<std::tuple<u64, u32, u32>> lds_seen;
+            const auto entry = std::make_tuple(params.hash, it->spec.runtime_info.hw.cs.shared_memory_size,
+                                               runtime_info.hw.cs.shared_memory_size);
+            std::scoped_lock lds_lock{lds_mutex};
+            if (lds_seen.size() < 64 && lds_seen.insert(entry).second) {
+                std::printf("GPU: cs %#llx permutation %zu built for %u bytes of LDS, dispatched "
+                            "with %u (GOW3_LDS_SIZE_KEY)\n",
+                            static_cast<unsigned long long>(params.hash), perm_idx,
+                            std::get<1>(entry), std::get<2>(entry));
+                std::fflush(stdout);
+            }
+        }
     }
     return std::make_tuple(&program->info, module,
                            AssignFetch(fetch, program->modules[perm_idx].spec.fetch_shader_data),

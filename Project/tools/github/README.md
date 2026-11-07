@@ -5,7 +5,7 @@ Thieves* and *Drake's Deception*) natively on Windows. The game's own x86-64 cod
 on the PC; a runtime supplies the PS4 system libraries, and a Vulkan renderer executes the PS4 GPU
 work.
 
-By **upstream project (see CREDITS.md)** ([YouTube](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port),
+By **BilalReloaded** ([YouTube](https://www.youtube.com/@BilalReloaded/videos),
 [GitHub](https://github.com/bc160201983)), October 2026. What changed and when:
 [CHANGELOG.md](CHANGELOG.md).
 
@@ -88,7 +88,7 @@ plan and test list: [analysis/PLAN.md](analysis/PLAN.md).
   from the start in all three games; saves are untouched.
 - **Game update 1.02** is used automatically when it sits next to the game folder (see below).
 - Log and save folders, desktop shortcut, shader cache reset, game folder selection, links to the
-  author's [YouTube](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port) and GitHub.
+  author's [YouTube](https://www.youtube.com/@BilalReloaded/videos) and GitHub.
 
 **In game:** `Insert` or `LT + R3` opens the menu (display, anti-aliasing, draw distance, frame rate,
 overlay, controls). Both shortcuts can be changed in its Controls tab (any key; any one or two
@@ -192,8 +192,8 @@ tag `v0.1.1`; GitHub Actions then builds the package and publishes the release w
 
 ## Credits and license
 
-- **Uncharted port, launcher and game fixes: upstream project (see CREDITS.md)**
-  ([YouTube](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port),
+- **Uncharted port, launcher and game fixes: BilalReloaded**
+  ([YouTube](https://www.youtube.com/@BilalReloaded/videos),
   [GitHub](https://github.com/bc160201983)), 2026. The fixes and their dates are listed in
   [CHANGELOG.md](CHANGELOG.md); the commit history shows each change.
 - The runtime started from the [gow3_pc](https://github.com/FelipePrado0/gow3_pc) project
@@ -218,5 +218,5 @@ tag `v0.1.1`; GitHub Actions then builds the package and publishes the release w
 You are welcome to use these fixes in your own port. The GPL asks that you keep the copyright and
 license notices and publish your source code under the same license when you distribute your
 build. Beyond that, a request: **credit this project and link back to it**
-(`https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port`, by upstream project (see CREDITS.md)) in your README or release
+(`https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port`, by BilalReloaded) in your README or release
 notes, so people can find where a fix came from.

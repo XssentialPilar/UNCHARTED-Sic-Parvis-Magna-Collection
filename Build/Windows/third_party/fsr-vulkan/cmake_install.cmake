@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Proyecto/gow3_pc/gpu/third_party/fsr-vulkan
+# Install script for directory: C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/third_party/fsr-vulkan
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -12,7 +12,7 @@ if(NOT DEFINED CMAKE_INSTALL_CONFIG_NAME)
     string(REGEX REPLACE "^[^A-Za-z0-9_]+" ""
            CMAKE_INSTALL_CONFIG_NAME "${BUILD_TYPE}")
   else()
-    set(CMAKE_INSTALL_CONFIG_NAME "RelWithDebInfo")
+    set(CMAKE_INSTALL_CONFIG_NAME "Release")
   endif()
   message(STATUS "Install configuration: \"${CMAKE_INSTALL_CONFIG_NAME}\"")
 endif()
@@ -38,58 +38,58 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_portable.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_portable.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_rayregeneration_contract.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_rayregeneration_contract.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_radiancecache_contract.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_radiancecache_contract.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr4_v07_assets.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr4_v07_assets.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_framegeneration_presenter_policy.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_framegeneration_presenter_policy.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_temporal_lifecycle.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_temporal_lifecycle.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr4_v07_vulkan.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr4_v07_vulkan.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_host_1_1_4.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_host_1_1_4.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_vk_backend_1_1_4.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_vk_backend_1_1_4.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_vk_backend_3_1_5.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_vk_backend_3_1_5.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_vk_framegeneration_3_1_6.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/libffx_vulkan_fsr3_vk_framegeneration_3_1_6.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Proyecto/gow3_pc/gpu/third_party/fsr-vulkan/include/")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Project/gow3_pc/gpu/third_party/fsr-vulkan/include/")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan/ffx-vulkan-targets.cmake")
     file(DIFFERENT _cmake_export_file_changed FILES
          "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan/ffx-vulkan-targets.cmake"
-         "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/CMakeFiles/Export/27f2c5c22ac323ac676e6ce62df5341f/ffx-vulkan-targets.cmake")
+         "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/CMakeFiles/Export/27f2c5c22ac323ac676e6ce62df5341f/ffx-vulkan-targets.cmake")
     if(_cmake_export_file_changed)
       file(GLOB _cmake_old_config_files "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan/ffx-vulkan-targets-*.cmake")
       if(_cmake_old_config_files)
@@ -102,22 +102,22 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     endif()
     unset(_cmake_export_file_changed)
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan" TYPE FILE FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/CMakeFiles/Export/27f2c5c22ac323ac676e6ce62df5341f/ffx-vulkan-targets.cmake")
-  if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Rr][Ee][Ll][Ww][Ii][Tt][Hh][Dd][Ee][Bb][Ii][Nn][Ff][Oo])$")
-    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan" TYPE FILE FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/CMakeFiles/Export/27f2c5c22ac323ac676e6ce62df5341f/ffx-vulkan-targets-relwithdebinfo.cmake")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan" TYPE FILE FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/CMakeFiles/Export/27f2c5c22ac323ac676e6ce62df5341f/ffx-vulkan-targets.cmake")
+  if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Rr][Ee][Ll][Ee][Aa][Ss][Ee])$")
+    file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan" TYPE FILE FILES "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/CMakeFiles/Export/27f2c5c22ac323ac676e6ce62df5341f/ffx-vulkan-targets-release.cmake")
   endif()
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/ffx-vulkan" TYPE FILE FILES
-    "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/ffx-vulkan-config.cmake"
-    "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/ffx-vulkan-config-version.cmake"
+    "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/ffx-vulkan-config.cmake"
+    "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/ffx-vulkan-config-version.cmake"
     )
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Compilacion/Windows/third_party/fsr-vulkan/install_local_manifest.txt"
+  file(WRITE "C:/Users/DiegoPorro/Downloads/Uncharted TNDC/Build/Windows/third_party/fsr-vulkan/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

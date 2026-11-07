@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <inttypes.h>
 #include "runtime.h"
 #include "cpu_check.h"
@@ -138,6 +139,66 @@ static void describe_address(char *out, size_t size, uintptr_t address) {
     }
     snprintf(out,size,"%p",(void *)address);
 }
+/* An address in committed executable memory (a return address candidate). */
+static int executable_address(uintptr_t address) {
+    MEMORY_BASIC_INFORMATION m;
+    if (address<0x10000 || !VirtualQuery((const void *)address,&m,sizeof(m)) || m.State!=MEM_COMMIT) return 0;
+    return (m.Protect&(PAGE_EXECUTE|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))!=0;
+}
+/* After the report: the stack as a list of addresses in executable memory (return address
+ * candidates, not a verified call chain: rbp is not a frame pointer in drivers and optimised
+ * host code, and a call to a bad pointer leaves only [rsp]). Bounded by the TEB stack (fibers
+ * set it to their own) and by what can be read. */
+static void scan_stack(uintptr_t sp) {
+    uintptr_t top, limit; /* NT_TIB StackBase, StackLimit (gs:[8], gs:[16]; NtCurrentTeb trips -Warray-bounds) */
+    __asm__ volatile("mov %%gs:8,%0\n mov %%gs:16,%1" : "=r"(top), "=r"(limit));
+    if (sp<limit || sp>=top || top-sp>32768) top=sp+32768;
+    char where[MAX_PATH+64];
+    uintptr_t last=0;
+    int shown=0;
+    for (uintptr_t at=sp&~(uintptr_t)7; at<top && shown<24; at+=8) {
+        uint64_t value;
+        SIZE_T got=0;
+        if (!ReadProcessMemory(GetCurrentProcess(),(const void *)at,&value,sizeof(value),&got) || got!=sizeof(value)) break;
+        if (value==last || !executable_address((uintptr_t)value)) continue;
+        describe_address(where,sizeof(where),(uintptr_t)value);
+        fprintf(stderr,"  stack+0x%04" PRIxPTR " %s\n",at-sp,where);
+        last=value; ++shown;
+    }
+}
+/* user/crash.dmp (threads, modules, stacks and the memory they point at): a later crash can be
+ * read with a debugger. dbghelp is loaded at start (not in a crashed process); the dump is
+ * written by a helper thread that gets 15 s: a lock held by the faulting code (heap, loader)
+ * then costs the dump, never a hung process. GOW3_NO_CRASH_DUMP=1 (or BB_NO_CRASH_DUMP=1): none. */
+typedef BOOL (WINAPI *MiniDumpWriteDumpFn)(HANDLE,DWORD,HANDLE,int,const void *,const void *,const void *);
+static MiniDumpWriteDumpFn crash_dump_write;
+static char crash_dump_path[MAX_PATH];
+static struct { DWORD thread; EXCEPTION_POINTERS *pointers; BOOL client; } crash_exception;
+static void crash_dump_configure(const char *user) {
+    if (getenv("GOW3_NO_CRASH_DUMP") || getenv("BB_NO_CRASH_DUMP")) return;
+    snprintf(crash_dump_path,sizeof(crash_dump_path),"%s\\crash.dmp",user);
+    HMODULE dbghelp=LoadLibraryA("dbghelp.dll");
+    if (dbghelp) crash_dump_write=(MiniDumpWriteDumpFn)(void *)GetProcAddress(dbghelp,"MiniDumpWriteDump");
+}
+static DWORD WINAPI crash_dump_thread(void *unused) {
+    (void)unused;
+    HANDLE file=CreateFileA(crash_dump_path,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
+    if (file==INVALID_HANDLE_VALUE) return 1;
+    /* MiniDumpWithIndirectlyReferencedMemory | WithUnloadedModules | WithProcessThreadData |
+     * WithThreadInfo: no full memory (the guest maps gigabytes). */
+    const BOOL ok=crash_dump_write(GetCurrentProcess(),GetCurrentProcessId(),file,0x40|0x20|0x100|0x1000,&crash_exception,NULL,NULL);
+    CloseHandle(file);
+    return ok ? 0 : 2;
+}
+static void write_crash_dump(EXCEPTION_POINTERS *info) {
+    if (!crash_dump_write) return;
+    crash_exception.thread=GetCurrentThreadId(); crash_exception.pointers=info; crash_exception.client=FALSE;
+    HANDLE helper=CreateThread(NULL,0,crash_dump_thread,NULL,0,NULL);
+    DWORD code=3;
+    if (helper && WaitForSingleObject(helper,15000)==WAIT_OBJECT_0) GetExitCodeThread(helper,&code);
+    if (code==0) fprintf(stderr,"Crash dump: %s\n",crash_dump_path);
+    else fprintf(stderr,"Crash dump: not written (%s)\n",code==1 ? "cannot create the file" : code==2 ? "dbghelp failed" : "timed out");
+}
 static int fatal_reported;
 static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     if (__atomic_exchange_n(&fatal_reported,1,__ATOMIC_ACQ_REL)) { Sleep(INFINITE); }
@@ -186,7 +247,9 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
         fprintf(stderr,"  #%d %s\n",depth,where);
         rbp=frame[0];
     }
+    scan_stack((uintptr_t)c->Rsp);
     if (gpu_enabled) gow3gpu_note_fatal_fault();
+    write_crash_dump(info);
     fflush(NULL);
     TerminateProcess(GetCurrentProcess(),3);
     return EXCEPTION_CONTINUE_SEARCH;
@@ -441,6 +504,11 @@ static void cover_current_stack(const CONTEXT *context) {
 static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     const EXCEPTION_RECORD *record=info->ExceptionRecord;
     DWORD code=record->ExceptionCode;
+    /* gow3 5 Nov 2026: a page briefly missing while another thread remaps its view (runtime_memory.c
+     * runtime_memory_wait_carve): retry once the remap is done. */
+    if (code==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2 &&
+        runtime_memory_wait_carve((uintptr_t)record->ExceptionInformation[1]))
+        return EXCEPTION_CONTINUE_EXECUTION;
     if (code==EXCEPTION_STACK_OVERFLOW) {
         /* gow3 1 Nov 2026: a stack overflow leaves almost no stack for the report below (the
          * 2 GB card simulation died silently). First a few fixed lines written with no stack use:
@@ -942,6 +1010,190 @@ static void install_mouse_look(Segment *segments, uint64_t count, uint64_t size)
     if (!installed) puts("Mouse look: no known camera code in this executable (mouse acts as the right stick)");
     else runtime_mouselook_install_patches(); /* gow3 1 Nov 2026 */
 }
+/* Offset of the only match of `pattern` (hex, "??" = any byte) in the executable segments, -1 when it
+ * occurs not once. */
+static int64_t find_unique_code(Segment *segments, uint64_t count, const char *pattern) {
+    unsigned char bytes[96], any[96];
+    unsigned n = 0;
+    for (const char *p = pattern; *p && n < sizeof(bytes);) {
+        if (*p == ' ') { ++p; continue; }
+        if (p[0] == '?' && p[1] == '?') { any[n] = 1; bytes[n++] = 0; p += 2; continue; }
+        char hex[3] = {p[0], p[1], 0}, *end;
+        const unsigned long value = strtoul(hex, &end, 16);
+        if (end != hex + 2) return -1;
+        any[n] = 0; bytes[n++] = (unsigned char)value; p += 2;
+    }
+    if (!n || any[0]) return -1;
+    int64_t found = -1;
+    for (uint64_t s = 0; s < count; ++s) {
+        if (!(segments[s].flags & 1) || segments[s].size < n) continue;
+        const unsigned char *base = image + segments[s].address;
+        for (uint64_t i = 0; i + n <= segments[s].size; ++i) {
+            if (base[i] != bytes[0]) continue;
+            unsigned k = 1;
+            while (k < n && (any[k] || base[i + k] == bytes[k])) ++k;
+            if (k < n) continue;
+            if (found >= 0) return -1;
+            found = (int64_t)(segments[s].address + i);
+        }
+    }
+    return found;
+}
+/* gow3 4 Nov 2026: Uncharted 1 physics above 60 FPS (1.02, EU and US). The rigid-body integrator
+ * holds still any body slower than "Sticky Speed" / "Sticky Omega" (0.1, the game's own names; US
+ * 0x94c5f4 / 0x94c5f0). A body at rest gains g*dt per step: 0.16 m/s at 60 FPS gets it moving,
+ * 0.07 m/s at 144 FPS does not, so above 60 FPS bodies that should tip over or drop off a ledge stay
+ * put and fall asleep (the jet ski river barrels hang in mid-air). "Max Stop Frames" (10) and "Max
+ * Crawl Frames" (30) count steps, so objects and bodies came to rest after less time, and "Artificial
+ * Damping V" / "W" (0.9998 per step) took more speed per second. The world step (US 0x2358c0, dt in
+ * xmm0) now sets them on entry for min(1, 60*dt): every step behaves as at 60 FPS, and at 60 FPS and
+ * below nothing changes. GOW3_U1_STICKY=0, GOW3_U1_SETTLE=0, GOW3_U1_DAMPING=0: the game's values. */
+static float *u1_sticky_omega, *u1_sticky_speed, u1_sticky_omega0, u1_sticky_speed0;
+static uint32_t *u1_settle_stop, *u1_settle_crawl, u1_settle_stop0, u1_settle_crawl0;
+static float *u1_damp_v, *u1_damp_w, u1_damp_v0, u1_damp_w0;
+static int u1_physics_trace = -1;
+static ABI void u1_physics_step(float dt) {
+    if (u1_physics_trace) { /* GOW3_U1_PHYSICS_TRACE=1: the step times (one step per frame?) */
+        static volatile long steps;
+        if (u1_physics_trace < 0) {
+            const char *env = getenv("GOW3_U1_PHYSICS_TRACE");
+            u1_physics_trace = env && env[0] == '1';
+        }
+        const long k = __atomic_add_fetch(&steps, 1, __ATOMIC_RELAXED);
+        if (u1_physics_trace && (k <= 8 || k % 600 == 0)) printf("U1 physics: step %ld dt %.5f\n", k, dt);
+    }
+    if (!(dt > 0.0f)) return;
+    float scale = dt * 60.0f < 1.0f ? dt * 60.0f : 1.0f;
+    if (scale < 0.05f) scale = 0.05f; /* 1200 FPS: keeps the step counts in range */
+    if (u1_sticky_omega) {
+        *u1_sticky_omega = u1_sticky_omega0 * scale;
+        *u1_sticky_speed = u1_sticky_speed0 * scale;
+    }
+    if (u1_settle_stop) {
+        *u1_settle_stop = (uint32_t)((float)u1_settle_stop0 / scale + 0.5f);
+        *u1_settle_crawl = (uint32_t)((float)u1_settle_crawl0 / scale + 0.5f);
+    }
+    if (u1_damp_w) {
+        *u1_damp_v = powf(u1_damp_v0, scale);
+        *u1_damp_w = powf(u1_damp_w0, scale);
+    }
+}
+/* The game data a rip-relative operand points at (disp32 at at+disp, next instruction at at+end), or
+ * NULL outside a writable segment. */
+static void *u1_physics_operand(Segment *segments, uint64_t count, int64_t at, unsigned disp, unsigned end) {
+    int32_t d;
+    memcpy(&d, image + at + disp, 4);
+    const uint64_t address = (uint64_t)(at + end + d);
+    for (uint64_t s = 0; s < count; ++s)
+        if ((segments[s].flags & 2) && mapped(&segments[s], 1, address, 4)) return image + address;
+    return NULL;
+}
+static void install_u1_physics(Segment *segments, uint64_t count) {
+    const char *sticky_env = getenv("GOW3_U1_STICKY"), *settle_env = getenv("GOW3_U1_SETTLE"),
+               *damping_env = getenv("GOW3_U1_DAMPING");
+    const int sticky = !(sticky_env && sticky_env[0] == '0'), settle = !(settle_env && settle_env[0] == '0'),
+              damping = !(damping_env && damping_env[0] == '0');
+    if (!sticky && !settle && !damping) return;
+    /* push rbp; mov rbp,rsp; push r14 | push rbx; sub rsp,0x10; mov r14,rsi; vmovss [rbp-0x14],xmm0;
+     * mov rbx,rdi; mov dword [rbx+0x14eb4],0 */
+    const int64_t at = find_unique_code(segments, count,
+                                        "554889e5 4156 53 4883ec10 4989f6 c5fa1145ec 4889fb c783b44e010000000000");
+    if (at < 0) return; /* not Uncharted 1 1.02 */
+    /* the integrator's tests: vaddss; lea rax,[omega]; vucomiss xmm0,[rax]; jae; mov qword [r15],0 and
+     * vmulss xmm3,xmm3,xmm3; vmulss xmm2,xmm2,xmm3; lea rax,[speed]; vmovss xmm3,[rax]; vmulss xmm3,xmm3,xmm3 */
+    const int64_t o = find_unique_code(segments, count, "c5f258c0 488d05???????? c5f82e00 73?? 49c70700000000");
+    const int64_t v = find_unique_code(segments, count, "c5e259db c5ea59d3 488d05???????? c5fa1018 c5e259db");
+    /* the settle test: movzx eax,word [rcx+0x136]; lea rdx,[stop]; cmp eax,[rdx]; ja; movzx eax,word
+     * [rcx+0x138]; lea rcx,[crawl]; cmp eax,[rcx]; ja (US 0x1c80d3) */
+    const int64_t c = find_unique_code(segments, count,
+                                       "0fb78136010000 488d15???????? 3b02 77?? 0fb78138010000 488d0d???????? 3b01 77");
+    /* the damping: vmovss xmm4,[rbp-0x2c]; lea rsi,[W]; vmulss xmm2,xmm4,[rsi] (US 0x1c2390) and lea
+     * rsi,[V]; vmulss xmm2,xmm4,[rsi]; vmulss xmm0,xmm0,xmm2 (US 0x1c23c0) */
+    const int64_t dw = find_unique_code(segments, count, "c5fa1065d4 488d35???????? c5da5916");
+    const int64_t dv = find_unique_code(segments, count, "488d35???????? c5da5916 c5fa59c2");
+    if (sticky && o >= 0 && v >= 0) {
+        u1_sticky_omega = u1_physics_operand(segments, count, o, 7, 11);
+        u1_sticky_speed = u1_physics_operand(segments, count, v, 11, 15);
+        if (u1_sticky_omega && u1_sticky_speed) {
+            u1_sticky_omega0 = *u1_sticky_omega;
+            u1_sticky_speed0 = *u1_sticky_speed;
+        }
+        if (!u1_sticky_omega || !u1_sticky_speed || !(u1_sticky_omega0 > 0.0f && u1_sticky_omega0 < 1.0f) ||
+            !(u1_sticky_speed0 > 0.0f && u1_sticky_speed0 < 1.0f)) u1_sticky_omega = NULL;
+    }
+    if (sticky && !u1_sticky_omega) puts("U1 physics: sticky thresholds not found, not scaled");
+    if (settle && c >= 0) {
+        u1_settle_stop = u1_physics_operand(segments, count, c, 10, 14);
+        u1_settle_crawl = u1_physics_operand(segments, count, c, 28, 32);
+        if (u1_settle_stop && u1_settle_crawl) {
+            u1_settle_stop0 = *u1_settle_stop;
+            u1_settle_crawl0 = *u1_settle_crawl;
+        }
+        if (!u1_settle_stop || !u1_settle_crawl || !u1_settle_stop0 || !u1_settle_crawl0 || u1_settle_stop0 > 1000 ||
+            u1_settle_crawl0 > 1000) u1_settle_stop = NULL;
+    }
+    if (settle && !u1_settle_stop) puts("U1 physics: settle step counts not found, not scaled");
+    if (damping && dw >= 0 && dv >= 0) {
+        u1_damp_w = u1_physics_operand(segments, count, dw, 8, 12);
+        u1_damp_v = u1_physics_operand(segments, count, dv, 3, 7);
+        if (u1_damp_w && u1_damp_v) {
+            u1_damp_w0 = *u1_damp_w;
+            u1_damp_v0 = *u1_damp_v;
+        }
+        if (!u1_damp_w || !u1_damp_v || !(u1_damp_w0 > 0.9f && u1_damp_w0 <= 1.0f) ||
+            !(u1_damp_v0 > 0.9f && u1_damp_v0 <= 1.0f)) u1_damp_w = NULL;
+    }
+    if (damping && !u1_damp_w) puts("U1 physics: artificial damping not found, not scaled");
+    if (!u1_sticky_omega && !u1_settle_stop && !u1_damp_w) return;
+    unsigned char *stub = allocate_near_image(page_size);
+    if (!stub) {
+        puts("U1 physics: unavailable (no stub page in range)");
+        return;
+    }
+    /* Saves rax, rcx, rdx, rsi, rdi, r8-r11 and xmm0-7 (the entry's arguments, dt in xmm0; rsp stays
+     * 16-byte aligned at the call), calls u1_physics_step(dt), restores them, replays the prologue's
+     * push rbp; mov rbp,rsp; push r14 and jumps back. */
+    static const unsigned char save[] = {
+        0x50, 0x51, 0x52, 0x56, 0x57, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53,
+        0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00,
+        0xf3, 0x0f, 0x7f, 0x04, 0x24,       0xf3, 0x0f, 0x7f, 0x4c, 0x24, 0x10,
+        0xf3, 0x0f, 0x7f, 0x54, 0x24, 0x20, 0xf3, 0x0f, 0x7f, 0x5c, 0x24, 0x30,
+        0xf3, 0x0f, 0x7f, 0x64, 0x24, 0x40, 0xf3, 0x0f, 0x7f, 0x6c, 0x24, 0x50,
+        0xf3, 0x0f, 0x7f, 0x74, 0x24, 0x60, 0xf3, 0x0f, 0x7f, 0x7c, 0x24, 0x70,
+    };
+    static const unsigned char restore[] = {
+        0xf3, 0x0f, 0x6f, 0x04, 0x24,       0xf3, 0x0f, 0x6f, 0x4c, 0x24, 0x10,
+        0xf3, 0x0f, 0x6f, 0x54, 0x24, 0x20, 0xf3, 0x0f, 0x6f, 0x5c, 0x24, 0x30,
+        0xf3, 0x0f, 0x6f, 0x64, 0x24, 0x40, 0xf3, 0x0f, 0x6f, 0x6c, 0x24, 0x50,
+        0xf3, 0x0f, 0x6f, 0x74, 0x24, 0x60, 0xf3, 0x0f, 0x6f, 0x7c, 0x24, 0x70,
+        0x48, 0x81, 0xc4, 0x80, 0x00, 0x00, 0x00,
+        0x41, 0x5b, 0x41, 0x5a, 0x41, 0x59, 0x41, 0x58, 0x5f, 0x5e, 0x5a, 0x59, 0x58,
+    };
+    unsigned n = 0;
+    memcpy(stub + n, save, sizeof(save)); n += sizeof(save);
+    const uint64_t handler = (uint64_t)(uintptr_t)u1_physics_step;
+    stub[n++] = 0x48; stub[n++] = 0xb8; memcpy(stub + n, &handler, 8); n += 8; /* mov rax, handler */
+    stub[n++] = 0xff; stub[n++] = 0xd0;                                       /* call rax */
+    memcpy(stub + n, restore, sizeof(restore)); n += sizeof(restore);
+    memcpy(stub + n, image + at, 6); n += 6;                                  /* the prologue */
+    stub[n++] = 0xff; stub[n++] = 0x25; memset(stub + n, 0, 4); n += 4;       /* jmp [rip] */
+    const uint64_t back = (uint64_t)(uintptr_t)(image + at + 6);
+    memcpy(stub + n, &back, 8); n += 8;
+    protect(stub, page_size, 5);
+    if (!install_jump((uint64_t)at, 6, stub)) {
+        puts("U1 physics: unavailable (stub out of range)");
+        return;
+    }
+    if (u1_sticky_omega)
+        printf("U1 physics: sticky speed %.3f and omega %.3f scale with the step (world step %#llx)\n",
+               u1_sticky_speed0, u1_sticky_omega0, (unsigned long long)at);
+    if (u1_settle_stop)
+        printf("U1 physics: bodies settle after %u / %u steps at 60 FPS, the same time at any rate\n",
+               u1_settle_stop0, u1_settle_crawl0);
+    if (u1_damp_w)
+        printf("U1 physics: artificial damping %.4f / %.4f per 60 FPS step, the same loss per second at any rate\n",
+               u1_damp_v0, u1_damp_w0);
+}
 /* Damage dealt/taken and green/blue/gold orb multipliers (src/damage_hook.h, src/orb_hook.h):
  * the stubs read the menu's floats directly, so changes apply on the next hit or pickup. */
 static void install_stat_multipliers(Segment *segments, uint64_t count, uint64_t size) {
@@ -1106,9 +1358,9 @@ int main(int argc, char **argv) {
         char missing[128];
         CpuFeatureWords checked = cpu_words;
         if (isa_emulation) {
-            checked.leaf1_ecx |= (1u << 22) | (1u << 29);   /* MOVBE, F16C */
-            checked.leaf7_ebx |= 1u << 3;                   /* BMI1 */
-            checked.ext1_ecx |= 1u << 5;                    /* LZCNT */
+            checked.leaf1_ecx |= (1u << 22) | (1u << 23) | (1u << 29);   /* MOVBE, POPCNT, F16C */
+            checked.leaf7_ebx |= 1u << 3;                                /* BMI1 */
+            checked.ext1_ecx |= 1u << 5;                                 /* LZCNT */
         }
         if (cpu_missing_features(checked, missing, sizeof missing)) {
             printf("STOP: this CPU lacks instruction sets the game's code uses: %s (%s)\n", missing,
@@ -1143,6 +1395,7 @@ int main(int argc, char **argv) {
     gow3gpu_register_kernel();
 #ifdef _WIN32
     SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;
+    crash_dump_configure(user_dir ? user_dir : "user");
     AddVectoredExceptionHandler(1, vectored_fault);
     SetUnhandledExceptionFilter(unhandled_fault);
     runtime_host_scheduling_init();
@@ -1351,6 +1604,7 @@ int main(int argc, char **argv) {
         fputs("STOP: UC2MP game frame signatures rejected\n",stderr); return 1;
     }
     if (gpu_enabled) install_mouse_look(segments, ns, size);
+    install_u1_physics(segments, ns);
     /* gow3 24 Oct 2026: co-op research console (runtime_coop.c; GOW3_COOP_CMD / GOW3_COOP_BOOT, off by default). */
     { extern void runtime_coop_install(unsigned char *, uint64_t); runtime_coop_install(image, size); }
     runtime_gamesettings_set_image(image, size);

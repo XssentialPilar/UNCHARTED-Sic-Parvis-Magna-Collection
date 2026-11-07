@@ -37,8 +37,8 @@ int runtime_isa_configure(uint32_t leaf1_ecx, uint32_t leaf7_ebx, uint32_t ext1_
 #include <windows.h>
 #include <Zydis/Zydis.h>
 
-enum { K_LZCNT, K_TZCNT, K_MOVBE, K_ANDN, K_BEXTR, K_BLS, K_F16C, K_COUNT };
-static const char *const kind_names[K_COUNT] = {"lzcnt", "tzcnt", "movbe", "andn", "bextr", "blsi/blsmsk/blsr", "vcvtph2ps"};
+enum { K_LZCNT, K_TZCNT, K_MOVBE, K_ANDN, K_BEXTR, K_BLS, K_F16C, K_POPCNT, K_COUNT };
+static const char *const kind_names[K_COUNT] = {"lzcnt", "tzcnt", "movbe", "andn", "bextr", "blsi/blsmsk/blsr", "vcvtph2ps", "popcnt"};
 
 static int isa_mode;                 /* 0 off, 1 the CPU lacks some, 2 trap (test) */
 static int need[K_COUNT];            /* which kinds this CPU lacks (all of them in trap mode) */
@@ -68,6 +68,7 @@ static int kind_of(const ZydisDecodedInstruction *in) {
     case ZYDIS_MNEMONIC_BEXTR: return K_BEXTR;
     case ZYDIS_MNEMONIC_BLSI: case ZYDIS_MNEMONIC_BLSMSK: case ZYDIS_MNEMONIC_BLSR: return K_BLS;
     case ZYDIS_MNEMONIC_VCVTPH2PS: return in->attributes & ZYDIS_ATTRIB_HAS_VEX ? K_F16C : -1;
+    case ZYDIS_MNEMONIC_POPCNT: return K_POPCNT;
     default: return -1;
     }
 }
@@ -85,6 +86,7 @@ int runtime_isa_configure(uint32_t leaf1_ecx, uint32_t leaf7_ebx, uint32_t ext1_
     need[K_TZCNT] = need[K_ANDN] = need[K_BEXTR] = need[K_BLS] = (trap && !fx) || !(leaf7_ebx & (1u << 3));
     need[K_MOVBE] = trap || !(leaf1_ecx & (1u << 22));
     need[K_F16C] = (trap && !fx && !ivy) || !(leaf1_ecx & (1u << 29));
+    need[K_POPCNT] = (!trap && !(leaf1_ecx & (1u << 23))) || !strcmp(profile, "core2");
     int any = 0;
     for (int k = 0; k < K_COUNT; ++k) any |= need[k];
     if (!any) return 0;
@@ -1103,6 +1105,13 @@ static int run(CONTEXT *c, const ZydisDecodedInstruction *in, const ZydisDecoded
         for (unsigned i = 0; i < count; ++i) floats[i] = half_to_float(halves[i]);
         memcpy(&(&c->Xmm0)[dest], floats, 16);
         memcpy(&upper[dest], count == 8 ? floats + 4 : (float[4]){0, 0, 0, 0}, 16);
+        return 1;
+    }
+    case K_POPCNT: {
+        if (!read_source(c, in, &ops[1], rip, &a)) return 0;
+        const uint64_t r = (uint64_t)__builtin_popcountll(a & mask_of(width));
+        if (!write_register(c, ops[0].reg.value, r)) return 0;
+        set_flags(c, F_CF | F_PF | F_AF | F_ZF | F_SF | F_OF, a == 0 ? F_ZF : 0);
         return 1;
     }
     }

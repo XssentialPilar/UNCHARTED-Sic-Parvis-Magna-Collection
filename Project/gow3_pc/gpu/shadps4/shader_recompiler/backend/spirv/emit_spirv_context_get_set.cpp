@@ -9,6 +9,7 @@
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/ir/patch.h"
 #include "shader_recompiler/runtime_info.h"
+#include "gow3_nan_guard.h"
 
 #include <magic_enum/magic_enum.hpp>
 
@@ -215,6 +216,17 @@ Id EmitGetAttributeU1(EmitContext& ctx, IR::Attribute attr, u32 comp) {
     }
 }
 
+/// gow3 5 Nov 2026 (WorkgroupSplit, runtime_info.h): the guest X invocation of a split workgroup:
+/// the host invocation plus the host workgroup's place within its guest workgroup times the host
+/// workgroup size.
+static Id SplitGuestInvocation(EmitContext& ctx, Id host_x) {
+    const u32 host_size = ctx.runtime_info.hw.cs.workgroup_size[0] / ctx.workgroup_split;
+    const Id group =
+        ctx.OpCompositeExtract(ctx.U32[1], ctx.OpLoad(ctx.U32[3], ctx.workgroup_id), 0);
+    const Id part = ctx.OpUMod(ctx.U32[1], group, ctx.ConstU32(ctx.workgroup_split));
+    return ctx.OpIAdd(ctx.U32[1], ctx.OpIMul(ctx.U32[1], part, ctx.ConstU32(host_size)), host_x);
+}
+
 Id EmitGetAttributeU32(EmitContext& ctx, IR::Attribute attr, u32 comp) {
     switch (attr) {
     case IR::Attribute::VertexId:
@@ -227,13 +239,28 @@ Id EmitGetAttributeU32(EmitContext& ctx, IR::Attribute attr, u32 comp) {
         return ctx.OpLoad(ctx.U32[1], ctx.base_instance);
     case IR::Attribute::WorkgroupIndex:
         return ctx.workgroup_index_id;
-    case IR::Attribute::WorkgroupId:
-        return ctx.OpCompositeExtract(ctx.U32[1], ctx.OpLoad(ctx.U32[3], ctx.workgroup_id), comp);
-    case IR::Attribute::LocalInvocationId:
-        return ctx.OpCompositeExtract(ctx.U32[1], ctx.OpLoad(ctx.U32[3], ctx.local_invocation_id),
-                                      comp);
-    case IR::Attribute::LocalInvocationIndex:
-        return ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index);
+    case IR::Attribute::WorkgroupId: {
+        const Id wg =
+            ctx.OpCompositeExtract(ctx.U32[1], ctx.OpLoad(ctx.U32[3], ctx.workgroup_id), comp);
+        // gow3 5 Nov 2026 (WorkgroupSplit): guest workgroup = host workgroup / split.
+        if (ctx.workgroup_split > 1 && comp == 0) {
+            return ctx.OpUDiv(ctx.U32[1], wg, ctx.ConstU32(ctx.workgroup_split));
+        }
+        return wg;
+    }
+    case IR::Attribute::LocalInvocationId: {
+        const Id lid = ctx.OpCompositeExtract(
+            ctx.U32[1], ctx.OpLoad(ctx.U32[3], ctx.local_invocation_id), comp);
+        if (ctx.workgroup_split > 1 && comp == 0) {
+            return SplitGuestInvocation(ctx, lid);
+        }
+        return lid;
+    }
+    case IR::Attribute::LocalInvocationIndex: {
+        const Id index = ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index);
+        // One-dimensional when split: the index is the X invocation.
+        return ctx.workgroup_split > 1 ? SplitGuestInvocation(ctx, index) : index;
+    }
     case IR::Attribute::SampleIndex:
         return ctx.OpLoad(ctx.U32[1], ctx.sample_index);
     case IR::Attribute::SampleMask:
@@ -303,6 +330,14 @@ void EmitSetAttribute(EmitContext& ctx, IR::Attribute attr, Id value, u32 elemen
     if (IR::IsMrt(attr)) {
         const u32 index{u32(attr) - u32(IR::Attribute::RenderTarget0)};
         const auto& info{ctx.frag_outputs.at(index)};
+        if (Gow3NanGuard::ExportNanGuard() && !OutputAttrComponentType(ctx, attr).second) {
+            // NaN -> 0; mode 2 also +-Inf -> +-65504 (gow3_nan_guard.h, SuperMedo 0.3.13).
+            value = ctx.OpSelect(ctx.F32[1], ctx.OpIsNan(ctx.U1[1], value), ctx.f32_zero_value, value);
+            if (Gow3NanGuard::NanGuardMode() == 2) {
+                const Id limit{ctx.ConstF32(65504.0f)};
+                value = ctx.OpFClamp(ctx.F32[1], value, ctx.OpFNegate(ctx.F32[1], limit), limit);
+            }
+        }
         if (info.num_components == 1) {
             return op_store(info.id);
         } else {

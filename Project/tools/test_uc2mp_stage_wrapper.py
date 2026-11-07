@@ -32,7 +32,7 @@ class StageWrapperTests(unittest.TestCase):
             package.write_bytes(bytes.fromhex('790a0000') + bytes(32))
             before = (patch / RELATIVE_MANIFEST).read_bytes()
             report = build_overlay(base, patch, overlay)
-            self.assertEqual(report['source'], str((patch / RELATIVE_MANIFEST).resolve()))
+            self.assertEqual(report['source'], str(patch / RELATIVE_MANIFEST))
             self.assertEqual(build_overlay(base, patch, overlay), report)
             self.assertEqual((patch / RELATIVE_MANIFEST).read_bytes(), before)
             (overlay / RELATIVE_MANIFEST).write_text('other overlay')

@@ -103,26 +103,28 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
     critical_gc_samplers = max_samplers * 15 / 16;
 
     // Set up garbage collection parameters.
+    const char* low_vram_env = std::getenv("GOW3_LOW_VRAM");
+    const bool low_vram_override = low_vram_env && low_vram_env[0] && low_vram_env[0] != '0';
     if (!instance.CanReportMemoryUsage()) {
-        trigger_gc_memory = 0;
-        pressure_gc_memory = DEFAULT_PRESSURE_GC_MEMORY;
-        critical_gc_memory = DEFAULT_CRITICAL_GC_MEMORY;
+        const auto watermarks = ComputeGcWatermarks(
+            low_vram_override ? 1024_MB : static_cast<u64>(instance.GetTotalMemoryBudget()),
+            low_vram_override);
+        trigger_gc_memory = watermarks.trigger_gc_memory;
+        pressure_gc_memory = watermarks.pressure_gc_memory;
+        critical_gc_memory = watermarks.critical_gc_memory;
         return;
     }
 
-    const s64 device_local_memory = static_cast<s64>(instance.GetTotalMemoryBudget());
-    const s64 min_spacing_expected = device_local_memory - 1_GB;
-    const s64 min_spacing_critical = device_local_memory - 512_MB;
-    const s64 mem_threshold = std::min<s64>(device_local_memory, TARGET_GC_THRESHOLD);
-    const s64 min_vacancy_expected = (6 * mem_threshold) / 10;
-    const s64 min_vacancy_critical = (2 * mem_threshold) / 10;
-    pressure_gc_memory = static_cast<u64>(
-        std::max<u64>(std::min(device_local_memory - min_vacancy_expected, min_spacing_expected),
-                      DEFAULT_PRESSURE_GC_MEMORY));
-    critical_gc_memory = static_cast<u64>(
-        std::max<u64>(std::min(device_local_memory - min_vacancy_critical, min_spacing_critical),
-                      DEFAULT_CRITICAL_GC_MEMORY));
-    trigger_gc_memory = static_cast<u64>((device_local_memory - mem_threshold) / 2);
+    const u64 device_local_memory = instance.GetTotalMemoryBudget();
+    const auto watermarks = ComputeGcWatermarks(device_local_memory, low_vram_override);
+    trigger_gc_memory = watermarks.trigger_gc_memory;
+    pressure_gc_memory = watermarks.pressure_gc_memory;
+    critical_gc_memory = watermarks.critical_gc_memory;
+    std::printf("GPU: VRAM budget %llu MiB (GC trigger %llu MiB, pressure %llu MiB, critical %llu MiB)\n",
+                static_cast<unsigned long long>(device_local_memory >> 20),
+                static_cast<unsigned long long>(trigger_gc_memory >> 20),
+                static_cast<unsigned long long>(pressure_gc_memory >> 20),
+                static_cast<unsigned long long>(critical_gc_memory >> 20));
 }
 
 TextureCache::~TextureCache() {
@@ -1191,7 +1193,10 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             view_mip = -1;
             view_slice = -1;
 
-            const auto& merged_info = image_id ? slot_images[image_id].info : info;
+            // gow3 4 Nov 2026: a copy, not a reference into slot_images: ResolveOverlap can insert
+            // an image (ExpandImage, ResolveDepthOverlap), which moves every image when the slot
+            // vector grows, and the reference would then read freed memory.
+            const ImageInfo merged_info = image_id ? slot_images[image_id].info : info;
             auto [overlap_image_id, overlap_view_mip, overlap_view_slice] =
                 ResolveOverlap(merged_info, desc.type, cache_id, image_id);
             if (overlap_image_id) {
@@ -1363,12 +1368,14 @@ ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& des
 
     // Register meta data for this color buffer
     if (desc.info.meta_info.cmask_addr) {
+        std::unique_lock metas_lock{metas_mutex};
         surface_metas.emplace(desc.info.meta_info.cmask_addr,
                               MetaDataInfo{.type = MetaType::CMask});
         image.info.meta_info.cmask_addr = desc.info.meta_info.cmask_addr;
     }
 
     if (desc.info.meta_info.fmask_addr) {
+        std::unique_lock metas_lock{metas_mutex};
         surface_metas.emplace(desc.info.meta_info.fmask_addr,
                               MetaDataInfo{.type = MetaType::FMask});
         image.info.meta_info.fmask_addr = desc.info.meta_info.fmask_addr;
@@ -1425,7 +1432,7 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
             if (it != retired_htiles.end()) {
                 const bool apply = it->second.cleared &&
                                    it->second.depth_address == image.info.guest_address &&
-                                   !surface_metas.contains(desc.info.meta_info.htile_addr);
+                                   !IsMeta(desc.info.meta_info.htile_addr);
                 retired_htiles.erase(it);
                 if (apply) {
                     clear_mask = -1;
@@ -1443,6 +1450,7 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
                 }
             }
         }
+        std::unique_lock metas_lock{metas_mutex};
         surface_metas.emplace(desc.info.meta_info.htile_addr,
                               MetaDataInfo{.type = MetaType::HTile, .clear_mask = clear_mask});
         image.info.meta_info.htile_addr = desc.info.meta_info.htile_addr;
@@ -2051,13 +2059,18 @@ void TextureCache::DeleteImage(ImageId image_id) {
     // Remove any registered meta areas.
     const auto& meta_info = image.info.meta_info;
     if (meta_info.cmask_addr) {
+        std::unique_lock metas_lock{metas_mutex};
         surface_metas.erase(meta_info.cmask_addr);
     }
     if (meta_info.fmask_addr) {
+        std::unique_lock metas_lock{metas_mutex};
         surface_metas.erase(meta_info.fmask_addr);
     }
     if (meta_info.htile_addr) {
-        surface_metas.erase(meta_info.htile_addr);
+        {
+            std::unique_lock metas_lock{metas_mutex};
+            surface_metas.erase(meta_info.htile_addr);
+        }
         // gow3 2 Nov 2026 (GOW3_HTILE_KEEP_CLEARS): the HTILE address of a freed depth image is
         // kept (see ClearRetiredMeta). Bounded: games free a few depth images per frame at most.
         if (KeepHtileClears() && image.info.props.is_depth && !unmapping_images) {

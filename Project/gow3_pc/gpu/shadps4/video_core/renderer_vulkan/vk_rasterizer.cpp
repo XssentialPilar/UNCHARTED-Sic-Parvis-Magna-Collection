@@ -2776,8 +2776,26 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // gow3: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
+    // gow3 4 Nov 2026: a draw of up to 6 indices is usually a full-screen quad, but a quad that
+    // writes depth or tests it for equality is scene geometry: Uncharted 3's chateau wall panels
+    // are single quads. Unjittered, they sat a fraction of a pixel off their jittered neighbours and
+    // the seams opened into pinholes showing the scene colour's clear (0, 0, 1, 0): rows of bright
+    // blue dots, only with an upscaler on. Full-screen depth copies and resolves write depth with
+    // an always-passing test: not these. GOW3_JITTER_SMALL=0: off.
+    static const bool jitter_small = [] {
+        const char* env = std::getenv("GOW3_JITTER_SMALL");
+        return !(env && env[0] == '0');
+    }();
+    const auto small_scene_geometry = [&] {
+        if (!jitter_small || !regs.depth_control.depth_enable) {
+            return false;
+        }
+        const auto func = regs.depth_control.depth_func;
+        return func != AmdGpu::CompareFunc::Always &&
+               (bool(regs.depth_control.depth_write_enable) || func == AmdGpu::CompareFunc::Equal);
+    };
     if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
-        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
+        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1 || small_scene_geometry())) {
         draw_jitter = upscaler->Jitter();
     } else if (const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
                ps && upscaler->Enabled() && JitterFullScreenPass(ps->pgm_hash) &&
@@ -3236,19 +3254,21 @@ std::array<EffectDispatch, 32> g_effect_dispatches{};
 std::atomic<u64> g_effect_dispatch_count{0};
 
 void ReportEffectDispatches() {
+    // gow3 6 Nov 2026: one write to stdout (line by line to stderr it came out mixed with other
+    // threads' output, character by character).
     const u64 count = g_effect_dispatch_count.load();
-    std::fprintf(stderr, "Effect shader dispatches before the loss (newest last, %llu in all):\n",
-                 static_cast<unsigned long long>(count));
+    std::string text = fmt::format("Effect shader dispatches before the loss (newest last, {} in all):\n",
+                                   count);
     for (u64 i = count > g_effect_dispatches.size() ? count - g_effect_dispatches.size() : 0;
          i < count; ++i) {
         const auto& d = g_effect_dispatches[i % g_effect_dispatches.size()];
-        std::fprintf(stderr,
-                     "  #%llu cs %08llx: %u vertices, %u groups; buffer 0 at %#llx, %u records, "
-                     "stride %u; largest count of the first 16: %u\n",
-                     static_cast<unsigned long long>(d.sequence),
-                     static_cast<unsigned long long>(d.hash), d.vertices, d.groups,
-                     static_cast<unsigned long long>(d.base), d.num_records, d.stride, d.max_count);
+        text += fmt::format("  #{} cs {:08x}: {} vertices, {} groups; buffer 0 at {:#x}, {} records, "
+                            "stride {}; largest count of the first 16: {}\n",
+                            d.sequence, d.hash, d.vertices, d.groups, d.base, d.num_records,
+                            d.stride, d.max_count);
     }
+    std::fwrite(text.data(), 1, text.size(), stdout);
+    std::fflush(stdout);
 }
 } // namespace
 
@@ -3379,6 +3399,86 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         std::fflush(stdout);
     }
 
+    // gow3 diagnostics 6 Nov 2026 (GOW3_CLOTH_BOUNDS=1): the loop counts the cloth solvers
+    // (1c957b01, 809864d3) read, from guest memory at dispatch time: constant buffer #1 dwords
+    // 160 (substeps), 163, 164 (convergence iterations), 165; #2 dwords 0 (N), 3, 22; and the
+    // largest per-vertex count (second u32 of the first 512 pairs) in buffers #10 and #18. The
+    // first 6 dispatches in full, then the largest values every 5 s (the caps of
+    // effect_loop_clamp_pass.cpp ClothBoundCap must stay far above them).
+    {
+        static const bool cloth_bounds = std::getenv("GOW3_CLOTH_BOUNDS") != nullptr;
+        if (cloth_bounds && (cs.pgm_hash == 0x1c957b01 || cs.pgm_hash == 0x809864d3)) {
+            const auto read_words = [&](u32 binding, std::initializer_list<u32> dwords,
+                                        u32* out) {
+                for (u32 k = 0; k < dwords.size(); ++k) {
+                    out[k] = 0xffffffffu;
+                }
+                if (binding >= cs.buffers.size() || cs.buffers[binding].IsSpecial()) {
+                    return;
+                }
+                const auto sharp = cs.buffers[binding].GetSharp(cs);
+                u32 k = 0;
+                for (const u32 dword : dwords) {
+                    const VAddr address = sharp.base_address + u64(dword) * 4;
+                    if (sharp.base_address && u64(dword) * 4 + 4 <= sharp.GetSize() &&
+                        IsMapped(address, 4)) {
+                        memory->CopySparseMemory(address, reinterpret_cast<u8*>(&out[k]), 4);
+                    }
+                    ++k;
+                }
+            };
+            const auto max_count = [&](u32 binding) -> u32 {
+                if (binding >= cs.buffers.size() || cs.buffers[binding].IsSpecial()) {
+                    return 0xffffffffu;
+                }
+                const auto sharp = cs.buffers[binding].GetSharp(cs);
+                const u64 bytes = std::min<u64>(sharp.GetSize(), 512 * 8);
+                if (!sharp.base_address || bytes < 8 || !IsMapped(sharp.base_address, bytes)) {
+                    return 0xffffffffu;
+                }
+                std::vector<u32> words(bytes / 4);
+                memory->CopySparseMemory(sharp.base_address, reinterpret_cast<u8*>(words.data()),
+                                         words.size() * 4);
+                u32 largest = 0;
+                for (size_t k = 1; k < words.size(); k += 2) {
+                    largest = std::max(largest, words[k]);
+                }
+                return largest;
+            };
+            u32 cb1[4], cb2[3];
+            read_words(1, {160, 163, 164, 165}, cb1);
+            read_words(2, {0, 3, 22}, cb2);
+            const u32 c10 = max_count(10), c18 = max_count(18);
+            static std::mutex bounds_mutex;
+            std::lock_guard bounds_lock{bounds_mutex};
+            static u32 full = 0;
+            static std::array<u32, 9> largest{};
+            static auto last = std::chrono::steady_clock::now();
+            const std::array<u32, 9> values{cb1[0], cb1[1], cb1[2], cb1[3], cb2[0],
+                                            cb2[1], cb2[2], c10,    c18};
+            for (size_t k = 0; k < values.size(); ++k) {
+                if (values[k] != 0xffffffffu) {
+                    largest[k] = std::max(largest[k], values[k]);
+                }
+            }
+            const auto now = std::chrono::steady_clock::now();
+            if (full < 6 || now - last >= std::chrono::seconds{5}) {
+                const auto& v = full < 6 ? values : largest;
+                std::printf("Cloth bounds %s cs %08llx: cb1[160]=%u [163]=%u [164]=%u [165]=%u "
+                            "cb2[0]=%u [3]=%u [22]=%u; counts #10 %u #18 %u\n",
+                            full < 6 ? "(dispatch)" : "(largest, 5 s)",
+                            static_cast<unsigned long long>(cs.pgm_hash), v[0], v[1], v[2], v[3],
+                            v[4], v[5], v[6], v[7], v[8]);
+                std::fflush(stdout);
+                if (full >= 6) {
+                    last = now;
+                    largest = {};
+                }
+                ++full;
+            }
+        }
+    }
+
     // gow3 diagnostics (GOW3_TRACKER_CAP=<n>): a barrier before a dispatch once the barrier
     // tracker holds n ranges (it is emptied by barriers only). Off: 1024 cost Uncharted 3's
     // crowded street at 4K 48 -> 39 FPS (draws keep it above the cap, a barrier per dispatch).
@@ -3425,6 +3525,12 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
 
     const vk::Pipeline handle = pipeline->Handle();
     const u32 dim_x = cs_program.dim_x, dim_y = cs_program.dim_y, dim_z = cs_program.dim_z;
+    // gow3 5 Nov 2026: a workgroup compiled as smaller ones (Shader::WorkgroupSplit) needs that
+    // many times the workgroups in X.
+    const u32 groups_x =
+        dim_x * Shader::WorkgroupSplit(cs.pgm_hash, {cs_program.num_thread_x.full,
+                                                     cs_program.num_thread_y.full,
+                                                     cs_program.num_thread_z.full});
     scheduler.Checkpoint("dispatch",cs.pgm_hash);
     if (FrameCapture::Active()) {
         FrameCapture::Dispatch(cs.pgm_hash, dim_x, dim_y, dim_z);
@@ -3446,7 +3552,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         if (!bound) {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
         }
-        cmdbuf.dispatch(dim_x, dim_y, dim_z);
+        cmdbuf.dispatch(groups_x, dim_y, dim_z);
         if (full_barrier) {
             RecordFullBarrier(cmdbuf);
         }
@@ -3501,6 +3607,18 @@ void Rasterizer::DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr a
                                         u32 size) {
     if (SkippedShader(pipeline->GetStage(Shader::SwStage::Compute).pgm_hash)) {
         return;
+    }
+    // gow3 5 Nov 2026: the workgroup count of an indirect dispatch is in GPU memory, so a split
+    // shader (Shader::WorkgroupSplit) would run a quarter of its threads. Never seen (48 frame
+    // captures of the three games): named in the log if it happens.
+    if (const u64 hash = pipeline->GetStage(Shader::SwStage::Compute).pgm_hash;
+        Shader::WorkgroupSplitListed(hash)) {
+        static std::atomic<bool> told{false};
+        if (!told.exchange(true)) {
+            std::fprintf(stderr, "GPU: indirect dispatch of the split compute shader %#llx: part "
+                                 "of its work is skipped (GOW3_WORKGROUP_SPLIT=0 avoids it)\n",
+                         static_cast<unsigned long long>(hash));
+        }
     }
     scheduler.PopPendingOperations();
     const u32 offset = 0;
@@ -5956,7 +6074,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         // NumBindings of the same T#), taken before the test knobs below edit the T#.
         const u32 layout_count =
             image_desc.mip_fallback_mode == Shader::MipStorageFallbackMode::DynamicIndex
-                ? static_cast<u32>(fetched_tsharp.last_level - fetched_tsharp.base_level + 1)
+                ? Shader::ImageResource::MipBindingCount(fetched_tsharp)
                 : 1u;
         TestGarbageTSharp(fetched_tsharp);
         TestGarbageSlot(stage, image_index, image_desc, fetched_tsharp);
@@ -6029,7 +6147,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
         // Same as image_desc.NumBindings(stage), without fetching the T# again.
         const u32 num_bindings =
             mip_fallback_mode == Shader::MipStorageFallbackMode::DynamicIndex
-                ? static_cast<u32>(tsharp.last_level - tsharp.base_level + 1)
+                ? Shader::ImageResource::MipBindingCount(tsharp)
                 : 1u;
         const bool proxy_candidate = sample_proxies && num_bindings == 1 &&
                                      !image_desc.needs_native && !image_desc.is_written &&

@@ -265,7 +265,7 @@ if (WIN32)
     set_target_properties(audio-downmix-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
     target_compile_options(audio-downmix-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
     target_include_directories(audio-downmix-test PRIVATE .. ../src)
-    target_link_libraries(audio-downmix-test PRIVATE PkgConfig::SDL3 bcrypt -pthread)
+    target_link_libraries(audio-downmix-test PRIVATE PkgConfig::SDL3 bcrypt winmm -pthread)
     add_executable(cpu-check-test EXCLUDE_FROM_ALL ../tests/test_cpu_check.c)
     set_target_properties(cpu-check-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
     target_compile_options(cpu-check-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
@@ -326,6 +326,10 @@ foreach(test arena_allocations gc_policy cache_io_queue)
     target_compile_options(${test}-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
     target_include_directories(${test}-test PRIVATE shadps4)
 endforeach()
+add_executable(frame-generation-test EXCLUDE_FROM_ALL ../tests/test_frame_generation.cpp
+    shadps4/video_core/renderer_vulkan/frame_generation_policy.cpp)
+target_compile_options(frame-generation-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(frame-generation-test PRIVATE shadps4)
 target_compile_options(async-compiler-test PRIVATE -UNDEBUG)
 target_include_directories(async-compiler-test PRIVATE shadps4)
 add_executable(warmup-inbox-test EXCLUDE_FROM_ALL ../tests/test_warmup_inbox.cpp)
@@ -498,3 +502,25 @@ set_target_properties(uc2mp-tick-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
 target_include_directories(uc2mp-tick-test PRIVATE ../src)
 target_compile_options(uc2mp-tick-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(uc2mp-tick-test PRIVATE -pthread)
+
+add_executable(spm-invariants-test EXCLUDE_FROM_ALL
+    ../tests/test_spm_invariants.cpp
+    ../../native/core/core.cpp
+    ../../native/core/arena_allocator.cpp
+    ../../native/core/frame_pacer.cpp
+    ../../native/graphics/dx11_backend.cpp
+    ../../native/graphics/dx12_backend.cpp
+    ../../native/graphics/dynamic_ring_buffer.cpp
+    ../../native/graphics/swapchain_hook.cpp
+    ../../native/graphics/transient_rt_pool.cpp
+    ../../native/graphics/vram_budget_mgr.cpp
+    ../../native/input/input_mapper.cpp
+    ../../native/input/gameinput_handler.cpp
+    ../../native/input/sdl_handler.cpp)
+target_include_directories(spm-invariants-test PRIVATE
+    ../../include
+    ../../vendor/minhook
+    ../../vendor/d3d12
+    ../../vendor/sdl3)
+target_compile_options(spm-invariants-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_link_libraries(spm-invariants-test PRIVATE -pthread)

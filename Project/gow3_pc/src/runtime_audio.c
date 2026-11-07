@@ -106,6 +106,28 @@ static size_t downmix_stereo(unsigned char *buf, size_t frames, int is_float) {
     }
     return frames*2*(is_float ? 4u : 2u);
 }
+/* Folds SDL-ordered 7.1 (FL FR FC LFE BL BR SL SR) frames to 5.1 (FL FR FC LFE SL SR) in place:
+   keeps FL FR FC LFE and folds the back pair (BL/BR) into the side surrounds (SL/SR) at -3 dB
+   (SuperMedo 0.3.13). Returns the 6-channel byte count. */
+static size_t downmix_51(unsigned char *buf, size_t frames, int is_float) {
+    const float k=0.70710678f;
+    for (size_t f=0;f<frames;++f) {
+        float s[8], o[6];
+        for (int c=0;c<8;++c) {
+            if (is_float) memcpy(&s[c],buf+(f*8+(size_t)c)*4,4);
+            else { int16_t v; memcpy(&v,buf+(f*8+(size_t)c)*2,2); s[c]=(float)v/32768.0f; }
+        }
+        o[0]=s[0]; o[1]=s[1]; o[2]=s[2]; o[3]=s[3];
+        o[4]=s[6]+k*s[4]; o[5]=s[7]+k*s[5];
+        for (int c=0;c<6;++c) {
+            float v=o[c]<-1.0f ? -1.0f : o[c]>1.0f ? 1.0f : o[c];
+            if (is_float) memcpy(buf+(f*6+(size_t)c)*4,&v,4);
+            else { int16_t a=(int16_t)(v*32767.0f); memcpy(buf+(f*6+(size_t)c)*2,&a,2); }
+        }
+    }
+    return frames*6*(is_float ? 4u : 2u);
+}
+static int speaker_channels(void);
 static Port *port_of(int32_t handle, int32_t *error) {
     int id=handle & 0xff;
     if ((handle & 0x3f000000)!=0x20000000 || id>=PORTS) { *error=ERR_INVALID_PORT; return NULL; }
@@ -142,9 +164,12 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
     for (int c=0;c<8;++c) p->volume[c]=VOLUME_0DB;
     if (sdl_audio()) {
         SDL_AudioSpec device; int device_frames;
-        p->downmix=p->channels==8 && SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&device,&device_frames)
-                   && device.channels==2;
-        SDL_AudioSpec spec={p->is_float ? SDL_AUDIO_F32 : SDL_AUDIO_S16, p->downmix ? 2 : p->channels, 48000};
+        const int has_dev=SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&device,&device_frames);
+        if (p->channels==8 && has_dev) {
+            if (device.channels==2) p->downmix=2;
+            else if (device.channels==6 || (device.channels<8 && speaker_channels()==6)) p->downmix=6;
+        }
+        SDL_AudioSpec spec={p->is_float ? SDL_AUDIO_F32 : SDL_AUDIO_S16, p->downmix ? p->downmix : p->channels, 48000};
         p->stream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&spec,NULL,NULL);
         if (p->stream) SDL_ResumeAudioStreamDevice(p->stream);
         else fprintf(stderr,"Runtime: SDL audio stream failed (%s); port %d uses the timer sink\n",SDL_GetError(),id);
@@ -153,7 +178,7 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
     const char *dump=getenv("GOW3_AUDIO_DUMP");
     if (dump) {
         char path[4096];
-        snprintf(path,sizeof(path),"%s.port%d.%dch.%s",dump,id,p->downmix ? 2 : p->channels,p->is_float ? "f32" : "s16");
+        snprintf(path,sizeof(path),"%s.port%d.%dch.%s",dump,id,p->downmix ? p->downmix : p->channels,p->is_float ? "f32" : "s16");
         p->dump=fopen(path,"wb");
         snprintf(path,sizeof(path),"%s.input-port%d.%dch.%s",dump,id,p->channels,p->is_float ? "f32" : "s16");
         p->input_dump=fopen(path,"wb");
@@ -161,7 +186,7 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
     ++ports_opened;
     pthread_mutex_unlock(&table_lock);
     printf("Runtime: audio port %d opened (type %d, %d ch, %s, %u frames%s)\n",id,type,p->channels,p->is_float ? "float" : "s16",length,
-           p->downmix ? ", downmixed to stereo" : "");
+           p->downmix==2 ? ", downmixed to stereo" : p->downmix==6 ? ", folded to 5.1" : "");
     return (type<<16) | id | 0x20000000;
 }
 static ABI int32_t audio_close(int32_t handle) {
@@ -203,7 +228,8 @@ static int32_t output_port(int32_t handle, const void *data, int pace) {
             if (p->is_float) { float v; memcpy(&v,(const char *)data+from*4,4); v*=gain; memcpy(converted+to*4,&v,4); }
             else { int16_t v; memcpy(&v,(const char *)data+from*2,2); v=(int16_t)((float)v*gain); memcpy(converted+to*2,&v,2); }
         }
-        if (p->downmix) bytes=downmix_stereo(converted,(size_t)p->frames,p->is_float);
+        if (p->downmix==6) bytes=downmix_51(converted,(size_t)p->frames,p->is_float);
+        else if (p->downmix) bytes=downmix_stereo(converted,(size_t)p->frames,p->is_float);
         if (p->dump) fwrite(converted,1,bytes,p->dump);
         if (p->stats) {
             uint64_t now=now_ns();
@@ -299,7 +325,14 @@ static int speaker_channels(void) {
     static int channels=-1;
     if (channels<0) {
         const char *v=getenv("GOW3_AUDIO_SPEAKERS");
-        int n=v && *v && strcmp(v,"auto") ? atoi(v) : 0;
+        if (!v || !*v) v=getenv("BB_SPEAKERS");
+        int n=0;
+        if (v && *v && strcmp(v,"auto")) {
+            if (!strcmp(v,"stereo")) n=2;
+            else if (!strcmp(v,"5.1")) n=6;
+            else if (!strcmp(v,"7.1")) n=8;
+            else n=atoi(v);
+        }
         if (!n) {
             SDL_AudioSpec device; int device_frames;
             const int device_channels=sdl_audio() && SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&device,&device_frames)

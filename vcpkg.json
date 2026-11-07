@@ -1,0 +1,19 @@
+{
+  "name": "uncharted-sic-parvis-magna-collection",
+  "version-string": "1.0.0",
+  "description": "Uncharted: Sic Parvis Magna Collection — Unified Native PC Port Runtime, Graphics & Input Architecture",
+  "homepage": "https://github.com/XssentialPilar/Uncharted-The-Nathan-Drake-Collection",
+  "license": "GPL-2.0-or-later",
+  "supports": "windows & x64",
+  "dependencies": [
+    "minhook",
+    "sdl3",
+    "directxtex",
+    "directx-headers",
+    "vulkan-headers",
+    "vulkan-memory-allocator",
+    "fmt",
+    "xxhash",
+    "zydis"
+  ]
+}

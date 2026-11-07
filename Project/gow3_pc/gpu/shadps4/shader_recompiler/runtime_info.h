@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdlib>
 #include <span>
 #include "common/types.h"
 #include "shader_recompiler/frontend/tessellation.h"
@@ -249,15 +250,54 @@ struct HwFragmentRuntimeInfo {
     }
 };
 
+/// gow3 6 Nov 2026 (on by default with the PS4 LDS bounds checks, GOW3_LDS_SIZE_KEY=0: off): the
+/// shared memory size is part of a compute permutation's key. It sizes the shader's shared array (and bounds its accesses,
+/// SharedMemoryBoundsPass), and the same shader is dispatched with different sizes: without it a
+/// permutation built for a smaller size served larger ones, whose accesses then ran past the array.
+inline bool& LdsSizeKey() {
+    static bool value = [] {
+        const char* env = std::getenv("GOW3_LDS_SIZE_KEY");
+        return !(env && env[0] == '0');
+    }();
+    return value;
+}
+
 struct HwComputeRuntimeInfo {
     u32 shared_memory_size;
     std::array<u32, 3> workgroup_size;
     std::array<bool, 3> tgid_enable;
 
     bool operator==(const HwComputeRuntimeInfo& other) const noexcept {
-        return workgroup_size == other.workgroup_size && tgid_enable == other.tgid_enable;
+        return workgroup_size == other.workgroup_size && tgid_enable == other.tgid_enable &&
+               (!LdsSizeKey() || shared_memory_size == other.shared_memory_size);
     }
 };
+
+/// gow3 5 Nov 2026 (GitHub #350 #362 #353 and the NVIDIA "device lost" group: the GPU is lost in
+/// long runs of the effect skinning shaders): cs 8f067540 and 7d7e7206 run 1024-thread
+/// workgroups. Compiled to 64 registers per thread, one such workgroup needs an SM's whole
+/// register file, and NVIDIA's scheduler then intermittently faults under load. Those two share
+/// nothing between their threads (no LDS, no barriers, no atomics; each thread's index is
+/// WorkgroupId.x * 1024 + LocalInvocationId.x: analysis/optimization-1028/DISPATCH-MERGE.md), so
+/// each guest workgroup runs as 4 host workgroups of 256 and the dispatch has 4 times the
+/// workgroups in X; the shader rebuilds the guest IDs. Set by the pipeline cache: on for NVIDIA's
+/// driver; GOW3_WORKGROUP_SPLIT=0: off, =1: on for every driver.
+inline bool& WorkgroupSplitOn() {
+    static bool on = false;
+    return on;
+}
+inline bool WorkgroupSplitListed(u64 pgm_hash) {
+    return WorkgroupSplitOn() && (pgm_hash == 0x8f067540 || pgm_hash == 0x7d7e7206);
+}
+/// How many host workgroups one guest workgroup runs as (1: unchanged).
+inline u32 WorkgroupSplit(u64 pgm_hash, const std::array<u32, 3>& size) {
+    constexpr u32 HostSize = 256;
+    if (!WorkgroupSplitListed(pgm_hash) || size[1] != 1 || size[2] != 1 || size[0] <= HostSize ||
+        size[0] % HostSize != 0) {
+        return 1;
+    }
+    return size[0] / HostSize;
+}
 
 /**
  * Stores information relevant to shader compilation sourced from liverpool registers.

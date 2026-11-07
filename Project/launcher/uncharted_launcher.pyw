@@ -25,18 +25,27 @@ import tkinter.font as tkfont
 import webbrowser
 from tkinter import messagebox
 
-from PIL import Image, ImageDraw, ImageTk
+try:
+    from PIL import Image, ImageDraw, ImageTk
+except ImportError:
+    Image = ImageDraw = ImageTk = None
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 try:  # launcher/net_lan.py: Uncharted 2 games hosted on this network (Multiplayer page). Optional:
     import net_lan  # without it (0.6.1's package missed it, #208) the launcher must still open
 except ImportError:
     net_lan = None
-import updater  # launcher/updater.py: updates from the GitHub releases
+try:
+    import updater  # launcher/updater.py: updates from the GitHub releases
+except ImportError:
+    updater = None
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "launcher" / "assets"
 DEFAULT_GAME_DIR = ROOT / "game" / "CUSA02344" / "uroot"
-STARTER_EXE = ROOT / "Uncharted Launcher.exe"  # the packaged build's starter (tools/package_windows.py)
+STARTER_EXE = ROOT / "Uncharted - Sic Parvis Magna Collection.exe"
 USER_DIR = ROOT / "analysis" / "uncharted-user"
 INI_FILE = USER_DIR / "probe.ini"
 RUN_SCRIPT = ROOT / "tools" / "probe_uncharted.py"
@@ -144,7 +153,7 @@ def shared_config_file():
 
 CONFIG_FILE = (WINE and shared_config_file()) or PREFIX_CONFIG_FILE
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-APP_TITLE = "Uncharted: The Nathan Drake Collection"
+APP_TITLE = "Uncharted: Sic Parvis Magna Collection"
 # Credits shown on the Advanced page: the anti-aliasing technologies.
 CREDITS = ("Credits: DLSS and DLAA use NVIDIA DLSS technology. NVIDIA, RTX and DLSS are trademarks of "
            "NVIDIA Corporation. AMD FidelityFX Super Resolution (FSR 3.1, FSR 4) by AMD. Uncharted camera "
@@ -197,26 +206,29 @@ def net_games():
 
 
 GAMES = [
-    {"key": "u1", "number": "1", "title": "DRAKE'S FORTUNE", "name": "Uncharted: Drake's Fortune", "subtitle": "Uncharted 1  •  double-click to play",
+    {"key": "u1", "number": "I", "title": "DRAKE'S FORTUNE", "name": "Uncharted: Drake's Fortune",
+     "subtitle": "El Dorado Expedition  •  Double-click to launch",
      "exe": "eboot.bin", "log": "uncharted"},
-    {"key": "u2", "number": "2", "title": "AMONG THIEVES", "name": "Uncharted 2: Among Thieves", "subtitle": "Uncharted 2  •  double-click to play",
+    {"key": "u2", "number": "II", "title": "AMONG THIEVES", "name": "Uncharted 2: Among Thieves",
+     "subtitle": "Shambhala Expedition  •  Double-click to launch",
      "exe": "big2-ps4_Shipping.elf", "log": "big2-ps4_Shipping"},
-    {"key": "u3", "number": "3", "title": "DRAKE'S DECEPTION", "name": "Uncharted 3: Drake's Deception", "subtitle": "Uncharted 3  •  double-click to play",
+    {"key": "u3", "number": "III", "title": "DRAKE'S DECEPTION", "name": "Uncharted 3: Drake's Deception",
+     "subtitle": "Iram of the Pillars  •  Double-click to launch",
      "exe": "big3-ps4_Shipping.elf", "log": "big3-ps4_Shipping"},
 ]
 
-# Palette: the Collection's parchment and gold over a dark leather brown.
-BG = "#120e0a"
-PANEL = "#1b1510"
-PANEL_HI = "#251d16"
-LINE = "#3a2e22"
-TEXT = "#f1e6cf"
-MUTED = "#a8977a"
-DIM = "#6f604b"
-GOLD = "#d4a24c"
-GOLD_HI = "#e9bc66"
-INK = "#2a1c0e"
-STOP_RED = "#b5533c"
+# Palette: Sic Parvis Magna Collection — Deep Nautical Obsidian & Francis Drake Aged Brass/Gold.
+BG = "#0c1017"
+PANEL = "#131924"
+PANEL_HI = "#1b2434"
+LINE = "#2d3b52"
+TEXT = "#f3ead6"
+MUTED = "#9fb0c7"
+DIM = "#62738a"
+GOLD = "#d8a84e"
+GOLD_HI = "#f0c66e"
+INK = "#0b0f16"
+STOP_RED = "#c24d3b"
 
 # At most 120: faster, the game's movement timing breaks (Drake's Fortune at 140-160 FPS: running
 # slows, Nate fell through the world). The runtime caps older, faster settings at 120 too.
@@ -949,16 +961,19 @@ PRESETS = {
                    "fsr1": "1", "rcas": "1", "rcas_strength": "75", "upscaler": "off"},
     },
     "low": {
-        "title": "LOW", "summary": "60 FPS  •  1080p, FSR 1",
-        "detail": "For older graphics cards: the game draws at half of 1080p and FSR 1 upscales it; "
-                  "the HUD stays sharp.",
+        "title": "LOW (2015 MIN)", "summary": "30–60 FPS  •  720p/1080p FSR 1 (1 GB VRAM)",
+        "detail": "Tuned for 2015 entry PCs (Core 2 Quad Q8400 / Phenom II X4 945 / i3-2100, 4 GB RAM, "
+                  "1 GB VRAM: GTX 460 / 550 Ti / 650, Radeon HD 5770 / 6790 / 7750): draws at 540p–720p "
+                  "with FSR 1 and aggressive 1 GB VRAM garbage collection.",
         "resolution": "1920x1080", "upscale": "performance",
         "values": {"fps_limit": "60", "frames_queued": "1", "vsync": "1", "async_shaders": "1",
                    "fsr1": "1", "rcas": "1", "rcas_strength": "75"},
     },
     "medium": {
-        "title": "MEDIUM", "summary": "60 FPS  •  as on PS4",
-        "detail": "Like the PS4: 1080p at 60 FPS. Right for most PCs.",
+        "title": "MEDIUM (2015 REC)", "summary": "60 FPS  •  1080p PS4 Settings (2 GB VRAM)",
+        "detail": "Tuned for 2015+ mid-range PCs (Core i5-2400 / FX-6300, 6–8 GB RAM, 2 GB VRAM: "
+                  "GTX 750 Ti / GTX 660, Radeon HD 7850 / R7 265 / R9 270) and up: native 1080p at "
+                  "60 FPS with PS4 visual fidelity.",
         "resolution": "1920x1080", "upscale": "off",
         "values": {"fps_limit": "60", "frames_queued": "1", "vsync": "1", "async_shaders": "1",
                    "fsr1": "0", "rcas": "1", "rcas_strength": "75"},
@@ -1114,8 +1129,9 @@ def gpu_tier(name):
         return "medium"
     if gpu_integrated(n):
         return "igpu"
-    nvidia =re.search(r"\b(rtx|gtx|gt|mx)\s*(\d{3,4})\s*(ti)?\s*(super)?", n)
+    nvidia = re.search(r"\b(rtx|gtx|gt|mx)\s*(\d{3,4})\s*(ti)?\s*(super)?", n)
     amd = re.search(r"\brx\s*(\d{3,4})\s*(xtx|xt|gre)?", n)
+    amd_legacy = re.search(r"\b(?:radeon\s+)?(hd|r7|r9)\s*(\d{3,4})\s*(x2|x|boost|ghz)?", n)
     arc = re.search(r"\barc\s*([ab])(\d{3})", n)
     if nvidia:
         kind, number = nvidia.group(1), int(nvidia.group(2))
@@ -1126,6 +1142,8 @@ def gpu_tier(name):
             if number == 1080 and ti:
                 tier = "high"
             elif 1060 <= number < 1100 or 1660 <= number < 1700 or (number == 1650 and super_):
+                tier = "medium"
+            elif (number == 750 and ti) or number in (660, 670, 680, 760, 770, 780, 950, 960, 970, 980):
                 tier = "medium"
             else:
                 tier = "low"
@@ -1157,6 +1175,16 @@ def gpu_tier(name):
                 tier = "low"
         else:
             tier = "medium" if number in (470, 480, 570, 580, 590) else "low"
+    elif amd_legacy:
+        series_tag, number = amd_legacy.group(1), int(amd_legacy.group(2))
+        if series_tag == "hd":
+            # 2015 Recommended: Radeon HD 7850 / 7870 / 7950 / 7970 (2 GB VRAM);
+            # 2015 Minimum: Radeon HD 5770 / 6790 / 7750 (1 GB VRAM) -> low
+            tier = "medium" if number >= 7850 else "low"
+        elif series_tag == "r9":
+            tier = "medium" if number >= 270 else "low"
+        else:  # r7 (e.g. Radeon R7 265 / R7 370)
+            tier = "medium" if number >= 265 else "low"
     elif "vega 56" in n or "vega 64" in n:
         tier = "medium"
     elif "radeon vii" in n:
@@ -1309,9 +1337,14 @@ def read_config():
     # a player who turns it off again keeps it off.
     if config.get("version", 1) < 8:
         games["u3"]["multithreaded"] = True
+    # Version 10 (0.8.4): Drake's Fortune with multithreaded rendering (the port no longer turns it
+    # off there): 91 -> 118-120 FPS where its GPU command thread was the limit. Once; a player who
+    # turns it off again keeps it off. (9 is a step of a development build.)
+    if config.get("version", 1) < 10:
+        games["u1"]["multithreaded"] = True
     for name in GAME_SETTING_DEFAULTS:
         config.pop(name, None)
-    config["version"] = 8
+    config["version"] = 10
     # Under Wine the game folder is also kept as a Linux path: another prefix can show the same
     # folder under another drive letter (Launcher.game_dir).
     folder = config.get("game_dir")
@@ -1336,7 +1369,11 @@ def write_config(config):
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
-        CONFIG_FILE.write_text(text, encoding="utf-8")
+        try:
+            CONFIG_FILE.write_text(text, encoding="utf-8")
+        except OSError as error:
+            # Still locked: the settings are kept for the next write; the launcher keeps running.
+            print(f"Could not write {CONFIG_FILE}: {error}", file=sys.stderr, flush=True)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1663,37 +1700,82 @@ class Launcher:
                       save=False)
 
     def build_hero(self):
-        w, h = self.width, self.px(170)
-        art = None
-        for name in ("pic1.png", "pic0.png"):
-            if (self.game_dir() / "sce_sys" / name).exists():
-                art = Image.open(self.game_dir() / "sce_sys" / name).convert("RGB")
-                break
-        if art is None:
-            art = Image.new("RGB", (1920, 1080), "#d9c9a6")
-        # Fill the width; keep Drake (right) and the top of the parchment in view.
-        scale = w / art.width
-        art = art.resize((w, int(art.height * scale)), Image.LANCZOS)
-        top = int(art.height * 0.02)
-        art = art.crop((0, top, w, top + h))
-        # Fade into the dark panel below.
-        fade = Image.new("L", (w, h), 0)
-        draw = ImageDraw.Draw(fade)
-        start = int(h * 0.62)
-        for y in range(start, h):
-            draw.line([(0, y), (w, y)], fill=int(255 * ((y - start) / (h - start)) ** 1.6))
-        dark = Image.new("RGB", (w, h), BG)
-        art = Image.composite(dark, art, fade)
-        photo = ImageTk.PhotoImage(art)
-        self.images.append(photo)
+        import math
+        w, h = self.width, self.px(176)
         canvas = tk.Canvas(self.root, width=w, height=h, bg=BG, highlightthickness=0)
         canvas.pack(side="top")
-        canvas.create_image(0, 0, image=photo, anchor="nw")
-        x, y = self.px(48), self.px(52)
-        canvas.create_text(x, y, text="UNCHARTED", font=self.f_title, fill="#3b2914", anchor="w")
-        canvas.create_text(x + self.px(3), y + self.px(44), text="T H E   N A T H A N   D R A K E   C O L L E C T I O N",
-                           font=self.f_subtitle, fill="#8a6326", anchor="w")
-        canvas.create_line(x + self.px(3), y + self.px(66), x + self.px(330), y + self.px(66), fill="#b98d45", width=2)
+        if Image is not None and ImageDraw is not None and ImageTk is not None:
+            art = None
+            for name in ("pic1.png", "pic0.png"):
+                if (self.game_dir() / "sce_sys" / name).exists():
+                    art = Image.open(self.game_dir() / "sce_sys" / name).convert("RGB")
+                    break
+            if art is None:
+                # Generate a rich nautical obsidian & compass gradient banner
+                art = Image.new("RGB", (w, h), "#101722")
+                draw_bg = ImageDraw.Draw(art)
+                for y_row in range(h):
+                    t = y_row / max(1, h - 1)
+                    r = int(20 * (1 - t) + 12 * t)
+                    g = int(28 * (1 - t) + 16 * t)
+                    b = int(42 * (1 - t) + 23 * t)
+                    draw_bg.line([(0, y_row), (w, y_row)], fill=(r, g, b))
+            else:
+                scale = w / art.width
+                art = art.resize((w, int(art.height * scale)), Image.LANCZOS)
+                top = int(art.height * 0.02)
+                art = art.crop((0, top, w, top + h))
+                # Blend game artwork with deep nautical obsidian tint
+                tint = Image.new("RGB", (w, h), "#0f1520")
+                art = Image.blend(art, tint, 0.62)
+            fade = Image.new("L", (w, h), 0)
+            draw = ImageDraw.Draw(fade)
+            start = int(h * 0.58)
+            for y_row in range(start, h):
+                draw.line([(0, y_row), (w, y_row)], fill=int(255 * ((y_row - start) / (h - start)) ** 1.5))
+            dark = Image.new("RGB", (w, h), BG)
+            art = Image.composite(dark, art, fade)
+            photo = ImageTk.PhotoImage(art)
+            self.images.append(photo)
+            canvas.create_image(0, 0, image=photo, anchor="nw")
+        else:
+            for y_row in range(0, h, 2):
+                t = y_row / max(1, h - 1)
+                r = int(20 * (1 - t) + 12 * t)
+                g = int(28 * (1 - t) + 16 * t)
+                b = int(42 * (1 - t) + 23 * t)
+                canvas.create_rectangle(0, y_row, w, y_row + 2, fill=f"#{r:02x}{g:02x}{b:02x}", outline="")
+
+        # Draw Francis Drake Astrolabe / Compass Rose Emblem on the right side of the hero banner
+        cx, cy = w - self.px(115), self.px(82)
+        r_outer = self.px(56)
+        r_inner = self.px(38)
+        canvas.create_oval(cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer, outline="#3b4d68", width=1)
+        canvas.create_oval(cx - r_inner, cy - r_inner, cx + r_inner, cy + r_inner, outline=GOLD, width=1)
+        for deg in range(0, 360, 45):
+            rad = math.radians(deg)
+            length = r_outer if deg % 90 == 0 else int(r_outer * 0.76)
+            x2 = cx + int(math.cos(rad) * length)
+            y2 = cy + int(math.sin(rad) * length)
+            canvas.create_line(cx, cy, x2, y2, fill=GOLD if deg % 90 == 0 else "#4f627d", width=2 if deg % 90 == 0 else 1)
+        canvas.create_text(cx, cy + r_outer + self.px(12), text="S I C • P A R V I S • M A G N A",
+                           font=("Segoe UI Semibold", 7), fill=GOLD, anchor="center")
+
+        x, y = self.px(44), self.px(44)
+        canvas.create_text(x, y, text="UNCHARTED", font=self.f_title, fill=TEXT, anchor="w")
+        canvas.create_text(x + self.px(3), y + self.px(42),
+                           text="S I C   P A R V I S   M A G N A   C O L L E C T I O N",
+                           font=self.f_subtitle, fill=GOLD, anchor="w")
+        canvas.create_line(x + self.px(3), y + self.px(62), x + self.px(430), y + self.px(62), fill=GOLD, width=2)
+        # 2015+ Hardware Compatibility Badge
+        badge_y = y + self.px(82)
+        round_rect(canvas, x + self.px(2), badge_y - self.px(11), x + self.px(520), badge_y + self.px(11),
+                   self.px(8), fill=PANEL_HI, outline=LINE)
+        canvas.create_text(
+            x + self.px(14), badge_y,
+            text="2015+ HARDWARE READY  •  DX11 (FL 11_0) & VULKAN 1.3  •  1 GB / 2 GB VRAM & 4 GB RAM OPTIMIZED",
+            font=("Segoe UI Semibold", 8), fill=GOLD_HI, anchor="w"
+        )
 
     def build_cards(self):
         frame = tk.Frame(self.root, bg=BG)
@@ -1701,7 +1783,7 @@ class Launcher:
         self.cards = {}
         gap = self.px(16)
         card_w = (self.width - 2 * self.px(40) - 2 * gap) // 3
-        card_h = self.px(72)
+        card_h = self.px(76)
         for i, game in enumerate(GAMES):
             canvas = tk.Canvas(frame, width=card_w, height=card_h, bg=BG, highlightthickness=0, cursor="hand2")
             canvas.grid(row=0, column=i, padx=(0 if i == 0 else gap, 0))
@@ -1716,17 +1798,19 @@ class Launcher:
         selected = key == self.config.get("game")
         canvas.delete("all")
         fill = PANEL_HI if selected or hover else PANEL
-        outline = GOLD if selected else ("#5a4733" if hover else LINE)
+        outline = GOLD if selected else ("#4a6080" if hover else LINE)
         round_rect(canvas, 2, 2, w - 2, h - 2, self.px(10), fill=fill, outline=outline, width=2 if selected else 1)
-        canvas.create_text(self.px(22), h // 2, text=game["number"], font=self.f_card_number,
+        if selected:
+            canvas.create_rectangle(self.px(6), self.px(12), self.px(10), h - self.px(12), fill=GOLD, outline="")
+        canvas.create_text(self.px(24), h // 2, text=game["number"], font=self.f_card_number,
                            fill=GOLD if selected else DIM, anchor="w")
-        canvas.create_text(self.px(66), h // 2 - self.px(10), text=game["title"], font=self.f_card_title,
+        canvas.create_text(self.px(74), h // 2 - self.px(10), text=game["title"], font=self.f_card_title,
                            fill=TEXT, anchor="w")
-        canvas.create_text(self.px(67), h // 2 + self.px(13), text=game["subtitle"], font=self.f_small,
+        canvas.create_text(self.px(75), h // 2 + self.px(13), text=game["subtitle"], font=self.f_small,
                            fill=MUTED, anchor="w")
         if selected:
-            canvas.create_text(w - self.px(18), self.px(16), text="SELECTED", font=("Segoe UI Semibold", 7),
-                               fill=GOLD, anchor="e")
+            canvas.create_text(w - self.px(16), self.px(16), text="ACTIVE EXPEDITION",
+                               font=("Segoe UI Semibold", 7), fill=GOLD, anchor="e")
 
     def select_game(self, key, save=True):
         if key not in self.cards:
@@ -2110,8 +2194,8 @@ class Launcher:
                 widget.set(value)
         if name == "igpu":
             # The command thread is the limit on an integrated GPU, and multithreaded rendering
-            # takes part of it. Drake's Fortune keeps it off (its gun and camera misbehave with it).
-            settings["multithreaded"] = self.current_game()["key"] != "u1"
+            # takes part of it (Drake's Fortune too since 0.8.4).
+            settings["multithreaded"] = True
             if isinstance(self.widgets.get("multithreaded"), Toggle):
                 self.widgets["multithreaded"].set(settings["multithreaded"])
             settings["aa"] = "off"
@@ -2278,7 +2362,7 @@ class Launcher:
             page, "Multithreaded rendering (experimental)",
             "Prepares the picture on a second CPU core: more FPS where the CPU is the limit, mostly "
             "in Uncharted 2 and 3 (on by default in Uncharted 3; keep Frames queued at 1 with it). "
-            "Turn it off if a game hangs while loading. Drake's Fortune always runs without it.",
+            "Turn it off if a game hangs while loading.",
             multithreaded)
 
         def job_threads(parent):
@@ -2460,6 +2544,9 @@ class Launcher:
                     and action in ("touchpad_left", "touchpad_right"):
                 side = "left" if action == "touchpad_left" else "right"
                 cell.config(image="", text=f"Touchpad {side}", fg=TEXT, bg=PANEL, width=14, height=1)
+                continue
+            if ImageTk is None or Image is None:
+                cell.config(image="", text=str(button), fg=TEXT, bg=PANEL, width=14, height=1)
                 continue
             key = (button, style, height)
             if key not in self.pad_images:
@@ -3166,9 +3253,12 @@ class Launcher:
                 self.update_busy = False
                 messagebox.showerror(APP_TITLE, f"The update could not be started:\n\n{error}")
                 return
-            self.config["window_xy"] = [self.root.winfo_x(), self.root.winfo_y()]
-            write_config(self.config)
-            self.root.destroy()
+            try:
+                self.config["window_xy"] = [self.root.winfo_x(), self.root.winfo_y()]
+                write_config(self.config)
+            finally:
+                # The updater waits for this process to exit: close even if the settings failed.
+                self.root.destroy()
             return
         done, total = self.update_progress
         amount = f"{100 * done / total:.0f}%" if total else f"{done / 1e6:.0f} MB"
@@ -3328,7 +3418,13 @@ class Launcher:
         env["UNCHARTED_TORCH_FORWARD"] = "1" if self.config.get("torch_forward", True) else "0"
         env["UNCHARTED_JOB_SLEEP"] = {"off": "0", "on": "1"}.get(str(self.config.get("job_sleep", "auto")), "auto")
         # renderer_vulkan/vk_instance.cpp: 1 on, auto (cards of 4.5 GiB or less), anything else off
-        env["GOW3_LOW_VRAM"] = {"on": "1", "auto": "auto"}.get(str(self.config.get("low_vram", "off")), "0")
+        active_preset = self.config.get("games", {}).get(game["key"], {}).get("preset", "medium")
+        low_vram_cfg = str(self.config.get("low_vram", "auto"))
+        if active_preset in ("low", "igpu") and low_vram_cfg == "off":
+            low_vram_cfg = "on"
+        env["GOW3_LOW_VRAM"] = {"on": "1", "auto": "auto"}.get(low_vram_cfg, "0")
+        if active_preset in ("low", "igpu"):
+            env.setdefault("GOW3_LOW_RAM", "1")
         env["UNCHARTED_LANGUAGE"] = str(self.config.get("language", "1"))
         env["UNCHARTED_SPEAKERS"] = str(self.config.get("speakers", "auto"))
         env["UNCHARTED_U3_EXPOSURE"] = str(self.config.get("u3_exposure", "0"))

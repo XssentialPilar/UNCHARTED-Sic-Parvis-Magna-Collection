@@ -1,6 +1,6 @@
 Uncharted: The Nathan Drake Collection - PC port (beta)
 =============================================================
-By upstream project (see CREDITS.md) - https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port
+By BilalReloaded - https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port
 
 Requirements
 - Windows 10 or 11, 64-bit.
@@ -62,7 +62,7 @@ Known issues
 - Frame rates above 120 are not offered: the games' movement breaks.
 
 Credits
-- Port, launcher and game fixes: upstream project (see CREDITS.md).
+- Port, launcher and game fixes: BilalReloaded.
 - DLAA uses NVIDIA DLSS technology (DLSS SDK 310.9.16). NVIDIA, RTX and DLSS are trademarks
   of NVIDIA Corporation.
   NVIDIA's license for nvngx_dlss.dll: licenses\nvidia-dlss\LICENSE.txt.
