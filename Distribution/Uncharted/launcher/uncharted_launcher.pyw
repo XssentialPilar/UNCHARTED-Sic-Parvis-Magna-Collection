@@ -222,6 +222,7 @@ GRAPHICS_APIS = [
     ("dx11", "DirectX 11"),
     ("dx12", "DirectX 12"),
     ("vulkan", "Vulkan 1.3"),
+    ("dx9", "DirectX 9Ex (FlipEx Presenter)"),
 ]
 
 VRAM_CAPS = [
@@ -1269,6 +1270,8 @@ def normalize_graphics_api(value):
         return "dx12"
     if val in ("vulkan", "vk"):
         return "vulkan"
+    if val in ("dx9", "d3d9", "directx9"):
+        return "dx9"
     return "dx11"
 
 

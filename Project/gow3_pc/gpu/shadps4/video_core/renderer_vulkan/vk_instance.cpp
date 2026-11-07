@@ -22,6 +22,7 @@
 #include "video_core/renderer_vulkan/vk_dlss.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
+#include "gow3_settings.h"
 
 #include <vk_mem_alloc.h>
 
@@ -1068,10 +1069,14 @@ u64 ConfiguredVramBudgetCapBytes() noexcept {
     for (const char* var : {"GOW3_VRAM_BUDGET_MB", "GOW3_GC_BUDGET_MB"}) {
         if (const char* env = std::getenv(var); env && env[0]) {
             const unsigned long long mb = std::strtoull(env, nullptr, 10);
-            if (mb >= 512 && mb <= 65536) {
+            if (mb >= 256 && mb <= 65536) {
                 return static_cast<u64>(mb) << 20;
             }
         }
+    }
+    const int ini_mb = Gow3Settings::Get().vram_budget_mb.load();
+    if (ini_mb >= 256 && ini_mb <= 65536) {
+        return static_cast<u64>(ini_mb) << 20;
     }
     return 0;
 }
@@ -1288,28 +1293,71 @@ void Instance::ReportAllocatorMemory() const {
     std::fflush(stdout);
 }
 
-// Adapted from SuperMedo/uncharted_pc 0.3.13 (GPL-2.0-or-later).
-void Instance::QueryMemory(u64& usage, u64& budget) const {
+u64 Instance::GetEngineAllocatedVramBytes() const {
+    if (!allocator) {
+        return 0;
+    }
+    VmaTotalStatistics stats{};
+    vmaCalculateStatistics(allocator, &stats);
+    const auto props = physical_device.getMemoryProperties();
+    u64 engine_device_local_bytes = 0;
+    for (u32 type = 0; type < props.memoryTypeCount; ++type) {
+        if (props.memoryTypes[type].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal) {
+            engine_device_local_bytes += stats.memoryType[type].statistics.allocationBytes;
+        }
+    }
+    if (engine_device_local_bytes == 0 && stats.total.statistics.allocationBytes > 0) {
+        engine_device_local_bytes = stats.total.statistics.allocationBytes;
+    }
+    return engine_device_local_bytes;
+}
+
+u64 Instance::GetConfiguredBudgetCapBytes() const {
+    return ConfiguredVramBudgetCapBytes();
+}
+
+void Instance::QueryMemoryDetailed(u64& engine_usage, u64& engine_budget,
+                                   u64& driver_usage, u64& driver_budget) const {
     vk::PhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_props{};
     vk::PhysicalDeviceMemoryProperties2 props = {
         .pNext = supports_memory_budget ? &memory_budget_props : nullptr,
     };
     physical_device.getMemoryProperties2(&props);
 
-    usage = 0;
-    budget = 0;
+    driver_usage = 0;
+    driver_budget = 0;
     if (supports_memory_budget) {
         for (const size_t heap : valid_heaps) {
-            usage += memory_budget_props.heapUsage[heap];
-            budget += memory_budget_props.heapBudget[heap];
+            driver_usage += memory_budget_props.heapUsage[heap];
+            driver_budget += memory_budget_props.heapBudget[heap];
         }
     }
-    if (budget == 0) {
-        budget = total_memory_budget;
+    if (driver_budget == 0) {
+        driver_budget = total_memory_budget;
     }
-    if (const u64 cap = ConfiguredVramBudgetCapBytes(); cap != 0 && (budget == 0 || budget > cap)) {
-        budget = cap;
+
+    const u64 cap = ConfiguredVramBudgetCapBytes();
+    if (cap != 0) {
+        engine_budget = cap;
+        engine_usage = GetEngineAllocatedVramBytes();
+        if (engine_usage == 0) {
+            engine_usage = std::min(driver_usage, cap);
+        }
+    } else {
+        engine_budget = driver_budget;
+        engine_usage = GetEngineAllocatedVramBytes();
+        if (engine_usage == 0) {
+            engine_usage = driver_usage;
+        }
     }
+}
+
+// Adapted from SuperMedo/uncharted_pc 0.3.13 (GPL-2.0-or-later).
+void Instance::QueryMemory(u64& usage, u64& budget) const {
+    u64 engine_usage = 0, engine_budget = 0, driver_usage = 0, driver_budget = 0;
+    QueryMemoryDetailed(engine_usage, engine_budget, driver_usage, driver_budget);
+    usage = engine_usage;
+    budget = engine_budget;
 }
 
 u64 Instance::GetDeviceMemoryUsage() const {
@@ -1322,6 +1370,18 @@ u64 Instance::GetDeviceMemoryBudgetNow() const {
     u64 usage, budget;
     QueryMemory(usage, budget);
     return budget;
+}
+
+u64 Instance::GetDriverHeapUsage() const {
+    u64 engine_usage = 0, engine_budget = 0, driver_usage = 0, driver_budget = 0;
+    QueryMemoryDetailed(engine_usage, engine_budget, driver_usage, driver_budget);
+    return driver_usage;
+}
+
+u64 Instance::GetDriverHeapBudget() const {
+    u64 engine_usage = 0, engine_budget = 0, driver_usage = 0, driver_budget = 0;
+    QueryMemoryDetailed(engine_usage, engine_budget, driver_usage, driver_budget);
+    return driver_budget;
 }
 
 vk::FormatFeatureFlags2 Instance::GetFormatFeatureFlags(vk::Format format) const {

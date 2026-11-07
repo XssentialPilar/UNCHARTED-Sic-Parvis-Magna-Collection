@@ -3,8 +3,10 @@
 // Uncharted: Sic Parvis Magna Collection — Real-Time DXGI Telemetry, 1 GB/2 GB Hard Caps & Mip0 Eviction
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -32,13 +34,63 @@ enum class VramPressureLevel : std::uint8_t {
     Critical = 2  // >= 88%: Evict Mip 0 in LRU order + DiscardResource
 };
 
+enum class VramCategory : std::uint8_t {
+    Textures = 0,         // Resident textures, streaming mips, cubemaps
+    Buffers = 1,          // Vertex/index arenas, uniform/storage buffers
+    RenderTargets = 2,    // Color targets, depth/stencil, resolve, swapchain
+    TransientStaging = 3, // Upload ring buffers, staging memory
+    ShadersPipelines = 4, // Pipeline state objects, shader code
+    Count = 5
+};
+
+struct VramCategoryBreakdown {
+    std::uint64_t texturesBytes{0};
+    std::uint64_t buffersBytes{0};
+    std::uint64_t renderTargetsBytes{0};
+    std::uint64_t transientStagingBytes{0};
+    std::uint64_t shadersPipelinesBytes{0};
+
+    [[nodiscard]] std::uint64_t TotalEngineBytes() const noexcept {
+        return texturesBytes + buffersBytes + renderTargetsBytes +
+               transientStagingBytes + shadersPipelinesBytes;
+    }
+
+    [[nodiscard]] std::uint64_t NonTextureBytes() const noexcept {
+        return buffersBytes + renderTargetsBytes +
+               transientStagingBytes + shadersPipelinesBytes;
+    }
+};
+
+struct VramTradeoffAction {
+    const char* actionName{nullptr};
+    std::uint64_t potentialSavingsBytes{0};
+    const char* rationale{nullptr};
+};
+
+struct BudgetComplianceReport {
+    bool isCompliant{true};
+    std::uint64_t configuredCapBytes{kHardCap1GbVramBytes};
+    std::uint64_t totalEngineBytes{0};
+    std::uint64_t totalDriverHeapBytes{0};
+    std::int64_t  deficitBytes{0}; // > 0 if over budget
+    const char*   primaryCulpritCategory{"None"};
+    std::size_t   tradeoffCount{0};
+    VramTradeoffAction tradeoffs[4]{};
+};
+
 struct VramTelemetry {
-    std::uint64_t     budgetBytes{0};
-    std::uint64_t     currentUsageBytes{0};
-    std::uint64_t     nonLocalUsageBytes{0};
-    float             usageRatio{0.0f};
+    std::uint64_t     budgetBytes{0};            // Engine configured hard cap (e.g. 820 MB = 859,832,320 B)
+    std::uint64_t     currentUsageBytes{0};      // Engine total managed usage
+    std::uint64_t     nonLocalUsageBytes{0};     // Non-local / PCIe shared RAM paging (must be 0)
+    float             usageRatio{0.0f};          // currentUsageBytes / budgetBytes
     VramPressureLevel pressure{VramPressureLevel::Normal};
     std::uint32_t     evictedMip0Count{0};
+
+    // Driver & Categorized Breakdown
+    std::uint64_t     driverHeapUsageBytes{0};   // System-wide heap usage (OS + DWM + apps)
+    std::uint64_t     driverHeapBudgetBytes{0};  // Driver reported heap budget
+    float             driverUsageRatio{0.0f};    // driverHeapUsageBytes / driverHeapBudgetBytes
+    VramCategoryBreakdown breakdown{};
 };
 
 // Flat SoA-friendly resident texture tracking entry (zero heap allocations in hot path)
@@ -59,8 +111,23 @@ public:
     VramBudgetManager() noexcept = default;
     ~VramBudgetManager() noexcept = default;
 
+    static VramBudgetManager& Instance() noexcept;
+
     bool Initialize(IDXGIAdapter3* adapter,
                     std::uint64_t hardCapBytes = kHardCap2GbVramBytes) noexcept;
+
+    // Categorized Allocation Auditing & Tracking
+    void TrackAllocation(VramCategory cat, std::uint64_t bytes) noexcept;
+    void TrackDeallocation(VramCategory cat, std::uint64_t bytes) noexcept;
+    void SetCategoryUsage(VramCategory cat, std::uint64_t bytes) noexcept;
+    [[nodiscard]] VramCategoryBreakdown GetCategoryBreakdown() const noexcept;
+
+    // Strict Net Texture Budget Derivation
+    [[nodiscard]] std::uint64_t GetNetTextureBudget() const noexcept;
+
+    // Tradeoff & Non-silent Budget Compliance Evaluation
+    [[nodiscard]] BudgetComplianceReport EvaluateCompliance(
+        std::uint64_t targetCapBytes = 0) const noexcept;
 
     // Called once at the beginning of every frame (Step 2 of Present hook)
     VramTelemetry PollAndEnforceBudget(ID3D11DeviceContext1* ctx,
@@ -99,6 +166,9 @@ private:
     bool           m_useSimulation{false};
     VramTelemetry  m_lastTelemetry{};
     ResidentTextureSlot m_slots[kMaxTrackedTextures]{};
+
+    // Centralized atomic allocation counters per category
+    std::atomic<std::uint64_t> m_categoryBytes[static_cast<std::size_t>(VramCategory::Count)]{};
 };
 
 } // namespace unc::graphics

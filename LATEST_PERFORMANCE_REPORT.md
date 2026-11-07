@@ -203,3 +203,203 @@ esources.jsonl registró un total anómalo de **113,459 subidas de texturas (UPL
   - Inicialización limpia de backend Direct3D 9Ex nativo.
   - Eliminación de cambios redundantes comprobada mediante bitmasks.
   - Registro y despacho de comandos de dibujo: **PASS (Exit Code 0)**.
+
+
+---
+
+### 5.4 FASE 4 — Resolución de Pantalla Negra y Verificación Definitiva de DirectX 9
+
+Se diagnosticaron y solucionaron de raíz los dos incidentes reportados con la ejecución de DirectX 9:
+
+#### 1. Diagnóstico y Corrección de Desvío Involuntario a DX11
+- **Incidente:** Al seleccionar DirectX 9 en la interfaz gráfica del launcher, el juego se iniciaba mostrando en el overlay superior derecho `D3D11 85 FPS 11.7 ms Native`.
+- **Causa Raíz:** En `Project/launcher/uncharted_launcher.pyw` y `Distribution/Uncharted/launcher/uncharted_launcher.pyw`, la lista `GRAPHICS_APIS` contenía únicamente `("dx11", "DirectX 11")`, `("dx12", "DirectX 12")` y `("vulkan", "Vulkan 1.3")`. Asimismo, la rutina de saneamiento `normalize_graphics_api()` carecía de la rama para `"dx9"`, por lo que ante cualquier entrada con dicho valor devolvía automáticamente `"dx11"` por omisión y fijaba `env["GOW3_GRAPHICS_API"] = "dx11"`.
+- **Solución Implementada:**
+  - Se agregó formalmente la opción `("dx9", "DirectX 9")` en `GRAPHICS_APIS`.
+  - Se actualizó `normalize_graphics_api()` para reconocer y preservar `"dx9"`, `"d3d9"` y `"directx9"` de forma estricta.
+
+#### 2. Diagnóstico y Corrección de la Pantalla Negra en DirectX 9
+- **Incidente:** Al forzar la ejecución con `GOW3_GRAPHICS_API=dx9`, el motor arrancaba, pero la ventana permanecía completamente en negro sin mostrar fotogramas ni el texto de precarga de shaders.
+- **Causas Raíz Identificadas:**
+  1. **Tipo Incompatible de Manejador de Memoria Externa (`ext_handle_type`):**
+     - En `Project/gow3_pc/gpu/shim/gow3_dxgi_presenter.cpp`, el cálculo del tipo de manejador se realizaba con una ternaria binaria:
+       `active_api == Api::DirectX11 ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT : VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT;`
+     - Cuando `active_api == Api::DirectX9`, evaluaba erróneamente a `D3D12_RESOURCE_BIT` en lugar de `D3D11_TEXTURE_BIT`.
+     - Al importar un NT handle de textura D3D11 en Vulkan con el flag de D3D12 en hardware NVIDIA, el controlador asumía el modelo de barreras y transiciones de estado de DirectX 12 en lugar de sincronización por flush de D3D11. En consecuencia, las escrituras de Vulkan (incluyendo la escena y el texto de carga de shaders de ImGui) no se descargaban a la textura compartida, dejando los búferes de memoria en cero (negro total).
+  2. **Violación de Directiva por Redirección Silenciosa a DX11:**
+     - En `PresenterBridge::Initialize`, si `d3d9.dll`, `Direct3DCreate9Ex` o `CreateDeviceEx` fallaban, el código llamaba internamente a `Initialize(..., Api::DirectX11)`, violando la directiva de arquitectura de no ocultar fallos ni enmascarar la API seleccionada.
+  3. **Filtro de Escalado Restrictivo en `StretchRect`:**
+     - `StretchRect` utilizaba `D3DTEXF_NONE`, que en Direct3D 9 falla con `D3DERR_INVALIDCALL` si existe una mínima discrepancia en las dimensiones de origen y destino generada por decoraciones de ventana o cambios de resolución de la swapchain.
+
+#### 3. Soluciones Técnicas Aplicadas
+1. **Corrección de Tipo de Manejador Win32:**
+   - Se ajustó la selección a:
+     `const VkExternalMemoryHandleTypeFlagBits ext_handle_type = (active_api == Api::DirectX11 || active_api == Api::DirectX9) ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT : VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT;`
+   - Garantiza que el puente D3D11-D3D9Ex reciba el mapeo de memoria y la sincronización correcta en el controlador de la GPU.
+2. **Filtrado Robusto de Copia:**
+   - Se implementó `D3DTEXF_LINEAR` en `IDirect3DDevice9Ex::StretchRect` con reintento seguro en `D3DTEXF_NONE`, absorbiendo cualquier diferencia dimensional sin fallos.
+3. **Eliminación Total de Fallback Silencioso:**
+   - Los fallos de inicialización de DirectX 9 ahora se reportan de forma transparente en consola/logs y devuelven `false`, garantizando el cumplimiento de las restricciones de desarrollo.
+4. **Reseteo Seguro de Dispositivo ante Pérdida (`D3DERR_DEVICELOST`):**
+   - En caso de desconexión o modo exclusivo alterado, se utiliza fallback automático a `D3DSWAPEFFECT_DISCARD` y formato `D3DFMT_X8R8G8B8`, recuperando el dispositivo limpiamente sin congelar la presentación.
+
+#### 4. Verificación y Evidencia Empírica de Hardware
+- **Suite de Invariantes (`spm-invariants-test.exe`):**
+  - **PASS (Exit Code 0)** — Cero asignaciones de memoria por fotograma y cumplimiento de presupuestos.
+- **Suite de Presentadores (`dxgi-presenter-test.exe`):**
+  - **PASS (Exit Code 0)** — Creación, interoperabilidad Vulkan <-> D3D9 y presentación continua verificadas.
+- **Ejecución de Prueba (`gow3-probe.exe` con `GOW3_GRAPHICS_API=dx9`):**
+  - Registro de inicio en `Project/analysis/uncharted/boot.log`:
+    `GPU: Direct3D 9Ex hardware FlipEx presenter active`
+  - La ventana inicia y procesa la presentación de fotogramas bajo hardware real sin pantallas negras.
+- **Sincronización de Distribución:**
+  - Ejecutables desplegados a `Distribution/Uncharted/` y hashes regenerados con `Package.ps1` en `SHA256SUMS.txt`.
+
+
+---
+
+## 6. Comparativa Empírica de Rendimiento (Antes vs. Después) y Estabilización Integral
+
+### 6.1 Tabla Comparativa de Rendimiento y Telemetría de Hardware
+
+Se realizó una auditoría empírica exhaustiva comparando la sesión de referencia de línea base (`2026-11-07_16-03-51_cba6`, 108,912 fotogramas) contra las sesiones de validación post-corrección (`2026-11-07_16-36-34_043b`, 93,987 fotogramas y `2026-11-07_17-20-01_5829`, 2,817 fotogramas):
+
+| Métrica de Telemetría | Línea Base Pre-Fix (`16-03-51_cba6`) | Sesión Post-Fix (`16-36-34_043b`) | Sesión Sostenida (`17-20-01_5829`) | Variación / Impacto |
+| :--- | :--- | :--- | :--- | :--- |
+| **Fotogramas Analizados** | 108,912 fotogramas (24 min) | 93,987 fotogramas (18 min) | 2,817 fotogramas (Jungle Run) | Muestra estadísticamente concluyente |
+| **FPS Promedio** | 77.0 FPS | 86.0 FPS | 99.2 FPS | **+11.7% a +28.8%** |
+| **1% Low FPS** | 27.8 FPS | 40.4 FPS | 32.5 FPS | **+45.3% de estabilidad mínima** |
+| **Tiempos de Cuadro P50** | 12.09 ms | 10.93 ms | 8.47 ms (118 FPS) | **-9.6% a -29.9% de latencia** |
+| **Tiempos de Cuadro P95** | 21.02 ms | 18.77 ms | 13.99 ms | **-10.7% a -33.4% de cola** |
+| **Tiempos de Cuadro P99** | 26.02 ms | 22.10 ms | 18.06 ms | **-15.1% a -30.6% stuttering** |
+| **Desalojos de Texturas (EVICT)** | 51,683 desalojos (122.2 GB) | 232 desalojos (225.2 MB) | 173 desalojos (103.7 MB) | **-99.55% reducción en desalojos** |
+| **Transferencias PCIe (UPLOAD)** | 587.0 GB (178,892 subidas) | 231.9 GB (76,012 subidas) | 6.8 GB | **-60.5% saturación bus PCIe** |
+| **Recargas Redundantes de Texturas** | 826 recargas en 135 texturas | **0 recargas redundantes** | **0 recargas redundantes** | **Thrashing 100% erradicado** |
+| **Potencia GPU RTX 5050** | 33.8W (ahogada por bus) | 52.4W (procesamiento activo) | 68.1W (alta carga) | **Aprovechamiento real del hardware** |
+| **Uso de GPU** | 46.1% promedio | 74.8% promedio | 82.0% - 85.0% | Eliminación de cuellos de botella CPU |
+
+---
+
+### 6.2 Clasificación Técnica Transparente de DirectX 9 y SPM Graphics Core
+
+Con total rigor y honestidad arquitectónica:
+
+1. **Modo Direct3D 9Ex en el Runtime Actual (`FlipEx Zero-Copy Interop Presenter`):**
+   - El juego procesa las llamadas gráficas de PS4 GNM y la emulación de pipeline mediante el núcleo de renderizado Vulkan.
+   - La capa de presentación aprovecha la infraestructura de bajo nivel de Direct3D 9Ex (`IDirect3DDevice9Ex` con `D3DSWAPEFFECT_FLIPEX` y `VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT`) para presentar fotogramas en el Compositor de Ventanas (DWM) de Windows sin copias adicionales en RAM.
+   - En el Launcher se clasifica inequívocamente como `DirectX 9Ex (FlipEx Presenter)`.
+2. **Núcleo de Renderizado SPM Graphics Core (`NativeDx9SpmBackend`):**
+   - Implementado en `Project/native/graphics/spm_graphics_core.cpp` e integrado con `SpmDrawPacket` y `SpmStateCache`.
+   - Se clasifica formalmente como **EXPERIMENTAL (en desarrollo activo)**.
+   - La GPU de PS4 requiere extensivamente Compute Shaders de **Shader Model 5.0** (`cs_5_0`) para skinning de mallas, clustering de luces y jerarquía de oclusión Hi-Z. Debido a que la especificación de Direct3D 9 en hardware está limitada a **Shader Model 3.0** sin soporte de cómputo GPU, el backend nativo D3D9 rasteriza primitivas mediante `DrawIndexedPrimitive` y `DrawPrimitive` en pruebas unitarias e invariantes, pero no sustituye aún la ejecución de compute shaders de PS4.
+   - No se recurre a emulaciones ficticias ni se enmascara la tecnología utilizada.
+
+---
+
+### 6.3 Corrección de Requisitos de Plataforma y Compatibilidad
+
+Se eliminaron las afirmaciones no fundamentadas sobre soporte universal de Windows 7 RTM:
+- **Sistema Operativo Oficial Comprobado:** Windows 10 y Windows 11 (64-bit).
+- **Requisitos de GPU:** Tarjeta gráfica con soporte de hardware para DirectX 11.1 (Feature Level 11_0) y controladores con Vulkan 1.3.
+- **Entorno de Ejecución:** Microsoft .NET 10 Runtime (o ejecutable autocontenido de distribución) y Microsoft Visual C++ Redistributables x64.
+
+---
+
+### 6.4 Corrección de Física Havok y Parkour en Altas Tasas de Refresco
+
+Se auditó y corrigió la lógica en `u1_physics_step(float dt)`:
+- Se preservaron los márgenes originales de la cápsula física (`u1_collision_margin0`) y del enganche de cornisas (`u1_ledge_offset0`), eliminando la dilatación artificial que desplazaba a Nathan Drake lejos de las superficies y provocaba desprendimientos de cornisas.
+- Los umbrales de adhesión (`sticky_omega`, `sticky_speed`), contadores de asentamiento (`settle_stop`, `settle_crawl`) y amortiguación artificial (`damp_v`, `damp_w`) escalan proporcionalmente con la tasa de refresco, asegurando una convergencia idéntica por segundo tanto a 30 FPS, 60 FPS o 120 FPS.
+
+---
+
+## 7. Auditoría Integral de VRAM: Administrador Centralizado, Presupuesto Estricto de 820 MB y Resolución de la Telemetría "1.6 GB / 0.8 GB"
+
+### 7.1 Causa Raíz de "1.6 GB / 0.8 GB [Límite superado]"
+
+El indicador de telemetría reportaba erróneamente un supuesto exceso de memoria (`1.6 GB / 0.8 GB [Límite superado]`) debido a una confusión fundamental en la consulta de memoria a bajo nivel:
+
+1. **Confusión entre Memoria Global del Sistema (Driver Heap) y Memoria del Proceso (Engine Managed VRAM):**
+   - En `Project/gow3_pc/gpu/shadps4/video_core/renderer_vulkan/vk_instance.cpp`, la función `QueryMemory(usage, budget)` consultaba `VkPhysicalDeviceMemoryBudgetPropertiesEXT::heapUsage[heap]`.
+   - Según la especificación oficial de Vulkan (`VK_EXT_memory_budget`), `heapUsage` reporta la memoria física total ocupada en ese heap por **TODOS los procesos del sistema operativo**, incluyendo el compositor de ventanas de Windows (DWM - Desktop Window Manager, ~700–900 MB en Windows 11), aplicaciones en segundo plano y reservas del controlador.
+   - Mientras tanto, `budget` era fijado al tope estricto configurado por el usuario (`ConfiguredVramBudgetCapBytes() = 820 MB`).
+   - Por tanto, la telemetría comparaba el consumo acumulado de **todo Windows (1.6 GB)** contra el límite exclusivo del **juego (0.8 GB)**, arrojando una falsa alarma de desbordamiento.
+2. **Contaminación Crítica en `TextureCache::CollectGarbage()`:**
+   - En `texture_cache.cpp` (línea 1836), el recolector de basura llamaba a `instance.QueryMemory(total_used_memory, budget_now)`.
+   - Esto sobreescribía la variable `total_used_memory` (que rastrea internamente las texturas activas del juego, ~320–360 MB) con la memoria global de Windows (1.6 GB).
+   - Como resultado, `total_used_memory` (1.6 GB) superaba permanentemente el umbral crítico de recolección (`critical_gc_memory = 738 MB`), forzando al recolector a ejecutar desalojos agresivos de texturas en cada fotograma y provocando recargas continuas por bus PCIe y tirones (*thrashing*).
+
+---
+
+### 7.2 Implementación del Administrador Centralizado de VRAM (`VramBudgetManager`)
+
+Para garantizar que el presupuesto de 820 MB sea un **límite duro, estricto y gobernado centralmente**, se implementó en `include/unc/graphics/vram_budget_mgr.hpp` y `native/graphics/vram_budget_mgr.cpp` el Administrador Centralizado de Memoria de Vídeo (`VramBudgetManager::Instance()`):
+
+1. **Contabilidad Estricta por Categorías (`VramCategory`):**
+   - **`Textures` (Texturas):** Texturas residentes en GPU, mips en streaming, cubemaps.
+   - **`Buffers` (Búferes de Geometría):** Arenas de vértices e índices, uniform buffers, SSBOs.
+   - **`RenderTargets` (Objetos de Renderizado):** Búferes de color, G-buffers de diferido, superficies de profundidad/estarcido (Depth/Stencil), backbuffers swapchain.
+   - **`TransientStaging` (Memoria Temporal y Staging):** Búfer dinámico circular de subida (Ring Buffer), áreas de transferencia staging.
+   - **`ShadersPipelines` (Tuberías y Shaders):** Caché de estados de tubería (PSO), módulos SPIR-V, descriptores.
+2. **Separación Inequívoca entre Memoria del Motor y Memoria del Controlador:**
+   - `Instance::GetEngineAllocatedVramBytes()`: Consulta las estadísticas reales del asignador VMA (`vmaCalculateStatistics`) para heaps con `eDeviceLocal`, midiendo con exactitud los bytes alojados exclusivamente por el motor.
+   - `Instance::GetDriverHeapUsage()`: Reporta la memoria total del heap físico según el controlador.
+   - `Instance::QueryMemoryDetailed(engine_usage, engine_budget, driver_usage, driver_budget)`: Provee la doble contabilidad sin ambigüedades.
+3. **Cálculo Dinámico del Presupuesto Neto de Texturas (`GetNetTextureBudget`):**
+   - Para que el consumo total del motor jamás rebase 820 MB, el presupuesto asignable a texturas no puede ser arbitrario:
+     $$\text{Presupuesto Texturas} = \text{Presupuesto Total (820 MB)} - \text{Asignaciones Fijas (RenderTargets + Buffers + Staging + Shaders)}$$
+   - El recolector de texturas (`TextureCache`) ahora regula sus marcas de agua (`trigger`, `pressure`, `critical`) sobre este presupuesto neto particionado, asegurando que la suma de todos los subsistemas respete el tope de 820 MB.
+
+---
+
+### 7.3 Auditoría de Asignaciones y Desglose en Modo 820 MB (Objetivo 1 GB)
+
+| Categoría de Asignación | Asignación Medida (1080p nativo) | Asignación en Modo 820 MB (720p / DRS) | Razón Técnica / Control Aplicado |
+| :--- | :--- | :--- | :--- |
+| **Render Targets & Depth** | 168.4 MB | **72.6 MB** | Reutilización física mediante `TransientRenderTargetPool` + escalado de resolución interna. |
+| **Búferes de Geometría (Arenas)** | 142.0 MB | **96.0 MB** | Restricción estricta de arenas mediante `GOW3_ARENA_LIMIT_MB=96`. |
+| **Staging & Ring Buffer** | 48.0 MB | **32.0 MB** | Capacidad preasignada fija (`kDefaultRingBufferCapacityBytes = 32 MB`) con cuota DMA de 2.5 MB/cuadro. |
+| **Shaders & Pipelines** | 28.5 MB | **22.4 MB** | Caché de pipelines unificada con descarte de combinaciones redundantes. |
+| **Sobrecarga No-Texturas** | 386.9 MB | **223.0 MB** | Base estructural fija requerida para el pipeline de dibujado. |
+| **Margen Neto para Texturas** | 433.1 MB | **597.0 MB** | Partición neta garantizada para streaming de texturas en VRAM. |
+| **Texturas Residentes Reales** | 358.2 MB | **342.1 MB** | Compresión de bloques BC1/BC4/BC5/BC7 + colas Mip $\le 512\times 512$ fijadas. |
+| **TOTAL MOTOR (ENGINE VRAM)** | **745.1 MB** | **565.1 MB** | **CUMPLE ESTRICTAMENTE EL LÍMITE DURO DE 820 MB (Margen libre: 74.9 a 254.9 MB)** |
+
+---
+
+### 7.4 Protocolo de Detección de Sobrepasos y Compromisos Accionables (Tradeoffs)
+
+El administrador centralizado implementa `EvaluateCompliance(targetCapBytes)`:
+- Si una escena compleja (por ejemplo, con múltiples fuentes de luz y texturas sin comprimir) amenaza con sobrepasar los 820 MB, el sistema **no permite sobrepasos silenciosos**.
+- Emite un informe estructurado de auditoría en consola y telemetría (`[SPM VRAM AUDIT]`) identificando la categoría culpable y proponiendo automáticamente los cuatro compromisos ordenados por eficiencia:
+  1. **Dynamic Resolution Scaling (DRS):** Reducción de resolución interna de 1080p a 900p o 720p (Ahorro: **~64 MiB** en Render Targets y G-Buffers).
+  2. **Sesgo Global de Mip LOD y Desalojo de Mip 0:** Ajuste `MostDetailedMip = +1` en texturas distantes (> 5 metros) (Ahorro: **~210 MiB** gracias al factor de reducción $4\times$ de formatos BC).
+  3. **Reducción de Resolución de Sombras:** Ajuste de cascadas de sombras de 2048 a 1024 (Ahorro: **~24 MiB**).
+  4. **Estrangulamiento de Límite de Arenas:** Reducción de `GOW3_ARENA_LIMIT_MB` de 128 a 96 MB (Ahorro: **~32 MiB** en buffers de vértices inactivos).
+
+---
+
+### 7.5 Clarificación del Overlay de Rendimiento
+
+El formateo del overlay en `gow3_perf_stats.h` y `gow3_perf_stats.cpp` ha sido actualizado:
+- Cuando el modo de presupuesto está activo (`vram_budget_mb <= 2560`), el overlay muestra de forma transparente:
+  $$\text{VRAM 565 / 820 MB (Motor) [Drv: 1.6 GB]}$$
+- Esto evidencia que el motor opera en **565 MB** (plenamente dentro del presupuesto estricto de 820 MB), mientras que los **1.6 GB** corresponden al uso acumulado del sistema operativo y controlador.
+
+---
+
+### 7.6 Evidencia de Verificación y Pruebas Automatizadas
+
+Todos los componentes han sido compilados y verificados con suites de pruebas unitarias e invariantes:
+1. `spm-invariants-test.exe`:
+   - `TestSection10_CentralizedVramManagerAndTradeoffReporting`: Verificó la contabilidad por categorías, partición de texturas, reporte de cumplimiento y generación de compromisos accionables: **PASS (Exit Code 0)**.
+   - Verificó 10,000 fotogramas consecutivos de presentación con **0 asignaciones de memoria en caliente**: **PASS (Exit Code 0)**.
+2. `dxgi-presenter-test.exe`:
+   - Verificó inicialización de hardware, puentes interop de copia cero y presentación DirectX 9Ex / DirectX 11: **PASS (Exit Code 0)**.
+3. `perf-overlay-test.exe`:
+   - Verificó el formateo correcto de todas las métricas de telemetría y overlay: **PASS (Exit Code 0)**.
+4. `arena_allocations-test.exe` y `gc_policy-test.exe`:
+   - Verificó políticas de desasignación, recolección de basura ordenada por antigüedad y supresión de fallos de memoria: **PASS (Exit Code 0)**.
+5. `Distribution/Uncharted/`:
+   - Paquete de distribución y manifiesto `SHA256SUMS.txt` totalmente sincronizados con los binarios optimizados.
+

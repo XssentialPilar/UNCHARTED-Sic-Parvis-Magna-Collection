@@ -90,6 +90,7 @@ public:
                             &d3dpp, nullptr, &pDev);
                         if (FAILED(hr)) {
                             d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+                            d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
                             hr = d3d9_ex_->CreateDeviceEx(
                                 D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd_,
                                 D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,

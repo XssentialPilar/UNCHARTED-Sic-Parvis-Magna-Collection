@@ -823,7 +823,7 @@ def job_sleep_enabled(executable=None):
 # on 4 threads Spin starves the game (U2 85 -> 4.5 FPS, U3 119 -> 5.9). Auto: Spin from 8 logical
 # CPUs in Uncharted 1. Uncharted 2 and 3 keep Sleep (0.8.0): nothing measured a gain from Spin
 # there (8 threads: U2 1% low 105 -> 83; 17 Oct, 16 cores: about 2% fewer FPS).
-JOB_SPIN_MIN_THREADS = {"u1": 16}
+JOB_SPIN_MIN_THREADS = {"u1": 8}
 
 
 def host_hardware_threads():

@@ -1,0 +1,24 @@
+{
+  "cpu": {
+    "vendor": "AuthenticAMD",
+    "brand": "AMD Ryzen 5 240 w/ Radeon 760M Graphics        ",
+    "physical_cores": 6,
+    "logical_processors": 12,
+    "l1_cache_bytes": 393216,
+    "l2_cache_bytes": 6291456,
+    "l3_cache_bytes": 16777216,
+    "has_avx2": true,
+    "has_avx512": true
+  },
+  "gpu": {
+    "adapter_name": "NVIDIA GeForce RTX 5050 Laptop GPU",
+    "vendor_id": 4318,
+    "device_id": 11672,
+    "dedicated_vram_bytes": 8294236160,
+    "shared_vram_bytes": 8218929152,
+    "is_discrete": true,
+    "is_nvml_supported": true
+  },
+  "total_ram_bytes": 16437858304,
+  "os_version": "Windows 11 / Windows 10 (NT 10.0)"
+}

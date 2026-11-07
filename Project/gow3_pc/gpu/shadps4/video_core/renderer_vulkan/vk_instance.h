@@ -567,6 +567,15 @@ public:
     /// One driver query for a consistent usage/budget pair (SuperMedo/uncharted_pc 0.3.13).
     void QueryMemory(u64& usage, u64& budget) const;
 
+    /// Detailed query separating engine managed VRAM from driver/system-wide heap usage.
+    void QueryMemoryDetailed(u64& engine_usage, u64& engine_budget,
+                             u64& driver_usage, u64& driver_budget) const;
+
+    [[nodiscard]] u64 GetEngineAllocatedVramBytes() const;
+    [[nodiscard]] u64 GetDriverHeapUsage() const;
+    [[nodiscard]] u64 GetDriverHeapBudget() const;
+    [[nodiscard]] u64 GetConfiguredBudgetCapBytes() const;
+
     /// gow3 1 Nov 2026 (2 GB cards): GOW3_VRAM_REPORT=<file>: what the VMA allocator holds in
     /// video memory (blocks vs allocations, per memory type) printed, and its full allocation
     /// list (vmaBuildStatsString) written to <file>. A test aid.

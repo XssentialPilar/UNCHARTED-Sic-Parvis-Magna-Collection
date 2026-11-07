@@ -47,6 +47,8 @@ struct Sample {
     float gpu_temp_c = -1.0f, cpu_temp_c = -1.0f;
     // RAM is the whole system (not this process); VRAM is the card's memory budget.
     double ram_used_gb = -1.0, ram_total_gb = -1.0, vram_used_gb = -1.0, vram_total_gb = -1.0;
+    double vram_driver_used_gb = -1.0, vram_driver_total_gb = -1.0;
+    bool is_vram_capped = false;
 };
 
 /// Process CPU time over wall time on every core, 0 to 100; -1 without a wall interval.
@@ -121,7 +123,18 @@ inline std::string Format(const Sample& s, unsigned mask, bool row) {
         add();
     }
     if (mask & Vram) {
-        pair(part, sizeof(part), "VRAM", s.vram_used_gb, s.vram_total_gb);
+        if (s.is_vram_capped && s.vram_total_gb > 0.0 && s.vram_total_gb <= 2.5) {
+            const double engine_mb = s.vram_used_gb * 1024.0;
+            const double cap_mb = s.vram_total_gb * 1024.0;
+            if (s.vram_driver_used_gb > 0.0) {
+                std::snprintf(part, sizeof(part), "VRAM %.0f/%.0f MB (Motor) [Drv: %.1f GB]",
+                              engine_mb, cap_mb, s.vram_driver_used_gb);
+            } else {
+                std::snprintf(part, sizeof(part), "VRAM %.0f/%.0f MB (Motor)", engine_mb, cap_mb);
+            }
+        } else {
+            pair(part, sizeof(part), "VRAM", s.vram_used_gb, s.vram_total_gb);
+        }
         add();
     }
     return out;

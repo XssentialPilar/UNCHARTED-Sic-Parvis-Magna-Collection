@@ -1,0 +1,8 @@
+{"frame":39,"timestamp_us":137569694359,"frame_time_ms":44.64,"baseline_ms":11.72,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
+{"frame":865,"timestamp_us":137576618102,"frame_time_ms":36.46,"baseline_ms":9.73,"primary_suspicion":"CPU_BOUND_SPIKE","details":""}
+{"frame":1339,"timestamp_us":137580681667,"frame_time_ms":37.56,"baseline_ms":9.79,"primary_suspicion":"CPU_BOUND_SPIKE","details":""}
+{"frame":1486,"timestamp_us":137582018414,"frame_time_ms":63.86,"baseline_ms":12.08,"primary_suspicion":"CPU_BOUND_SPIKE","details":""}
+{"frame":1487,"timestamp_us":137582138391,"frame_time_ms":119.98,"baseline_ms":17.48,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
+{"frame":1519,"timestamp_us":137582682248,"frame_time_ms":25.50,"baseline_ms":17.41,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
+{"frame":1572,"timestamp_us":137583596121,"frame_time_ms":25.19,"baseline_ms":17.98,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
+{"frame":1648,"timestamp_us":137584759264,"frame_time_ms":24.52,"baseline_ms":15.87,"primary_suspicion":"GPU_VBLANK_MISS","details":""}

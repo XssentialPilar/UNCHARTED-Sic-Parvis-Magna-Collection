@@ -245,6 +245,71 @@ void TestSection9_SpmNativeGraphicsCore() {
     assert(!core.IsInitialized());
 }
 
+
+void TestSection10_CentralizedVramManagerAndTradeoffReporting() {
+    using namespace unc::graphics;
+
+    VramBudgetManager mgr{};
+    assert(mgr.Initialize(nullptr, kHardCap1GbVramBytes));
+    assert(mgr.GetHardCapBytes() == kHardCap1GbVramBytes);
+
+    // 1. Categorized allocation accounting
+    constexpr std::uint64_t kTextures = 350ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kBuffers = 120ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kRenderTargets = 140ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kStaging = 48ULL * 1024ULL * 1024ULL;
+    constexpr std::uint64_t kShaders = 25ULL * 1024ULL * 1024ULL;
+
+    mgr.TrackAllocation(VramCategory::Textures, kTextures);
+    mgr.TrackAllocation(VramCategory::Buffers, kBuffers);
+    mgr.TrackAllocation(VramCategory::RenderTargets, kRenderTargets);
+    mgr.TrackAllocation(VramCategory::TransientStaging, kStaging);
+    mgr.TrackAllocation(VramCategory::ShadersPipelines, kShaders);
+
+    const auto breakdown = mgr.GetCategoryBreakdown();
+    assert(breakdown.texturesBytes == kTextures);
+    assert(breakdown.buffersBytes == kBuffers);
+    assert(breakdown.renderTargetsBytes == kRenderTargets);
+    assert(breakdown.transientStagingBytes == kStaging);
+    assert(breakdown.shadersPipelinesBytes == kShaders);
+
+    const std::uint64_t expectedTotal = kTextures + kBuffers + kRenderTargets + kStaging + kShaders;
+    assert(breakdown.TotalEngineBytes() == expectedTotal);
+    assert(breakdown.NonTextureBytes() == (kBuffers + kRenderTargets + kStaging + kShaders));
+
+    // 2. Net Texture Budget calculation under strict 820 MB cap
+    const std::uint64_t netTexBudget = mgr.GetNetTextureBudget();
+    assert(netTexBudget == (kHardCap1GbVramBytes - breakdown.NonTextureBytes()));
+    assert(kTextures <= netTexBudget);
+
+    // 3. Compliant scene evaluation
+    const auto reportOk = mgr.EvaluateCompliance(kHardCap1GbVramBytes);
+    assert(reportOk.isCompliant);
+    assert(reportOk.deficitBytes == 0);
+    assert(reportOk.totalEngineBytes <= kHardCap1GbVramBytes);
+
+    // 4. Heavy scene overflow evaluation (no silent overflows, explicit actionable tradeoffs)
+    constexpr std::uint64_t kExcessTextures = 250ULL * 1024ULL * 1024ULL;
+    mgr.TrackAllocation(VramCategory::Textures, kExcessTextures);
+
+    const auto reportOverflow = mgr.EvaluateCompliance(kHardCap1GbVramBytes);
+    assert(!reportOverflow.isCompliant);
+    assert(reportOverflow.deficitBytes > 0);
+    assert(reportOverflow.tradeoffCount == 4);
+    assert(reportOverflow.tradeoffs[0].potentialSavingsBytes > 0);
+    assert(reportOverflow.tradeoffs[1].potentialSavingsBytes > 0);
+    assert(reportOverflow.tradeoffs[2].potentialSavingsBytes > 0);
+    assert(reportOverflow.tradeoffs[3].potentialSavingsBytes > 0);
+
+    // Clean up
+    mgr.TrackDeallocation(VramCategory::Textures, kTextures + kExcessTextures);
+    mgr.TrackDeallocation(VramCategory::Buffers, kBuffers);
+    mgr.TrackDeallocation(VramCategory::RenderTargets, kRenderTargets);
+    mgr.TrackDeallocation(VramCategory::TransientStaging, kStaging);
+    mgr.TrackDeallocation(VramCategory::ShadersPipelines, kShaders);
+    assert(mgr.GetCategoryBreakdown().TotalEngineBytes() == 0ULL);
+}
+
 int main() {
 
     TestInvariant2_1_ViewportAndAspectDecoupling();
@@ -252,6 +317,7 @@ int main() {
     TestSection3_VramBudgetsBcCompressionAndTransientAliasing();
     TestSection8_ZeroAllocationsAcross10000Presents();
     TestSection9_SpmNativeGraphicsCore();
+    TestSection10_CentralizedVramManagerAndTradeoffReporting();
     std::printf("All Uncharted: Sic Parvis Magna Collection invariants (including 10,000-frame zero-allocation & 1GB/2GB VRAM caps) passed.\n");
     return 0;
 }

@@ -1832,8 +1832,11 @@ void TextureCache::GarbageCollectImages() {
         read_usage = false;
     }
     if (read_usage) {
+        u64 engine_usage_now = 0;
         u64 budget_now = 0;
-        instance.QueryMemory(total_used_memory, budget_now);
+        u64 driver_usage_now = 0;
+        u64 driver_budget_now = 0;
+        instance.QueryMemoryDetailed(engine_usage_now, budget_now, driver_usage_now, driver_budget_now);
         total_used_memory = EffectiveMemoryUsage(
             total_used_memory, pending_free_bytes.load(std::memory_order_relaxed));
         // gow3: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
@@ -1881,18 +1884,34 @@ void TextureCache::GarbageCollectImages() {
                 if (budget <= (u64{1024} << 20) && (low_vram_flag || (forced_budget && forced_budget <= (u64{1024} << 20)))) {
                     budget = kStrict1GbCapBytes;
                 }
+
+                // Centralized VRAM Partitioning:
+                // Deduct non-texture engine allocations (Render Targets, Buffer Arenas, Staging, Shaders)
+                // from the total engine budget so the texture cache enforces a strict slice.
+                u64 non_texture_bytes = 0;
+                if (engine_usage_now > total_used_memory) {
+                    non_texture_bytes = engine_usage_now - total_used_memory;
+                }
+                u64 tex_budget = budget;
+                if (non_texture_bytes > 0 && non_texture_bytes < budget) {
+                    tex_budget = budget - non_texture_bytes;
+                    if (tex_budget < (budget * 40ULL / 100ULL)) {
+                        tex_budget = (budget * 40ULL / 100ULL);
+                    }
+                }
+
                 if (budget <= (u64{2560} << 20)) {
-                    // Controller Zones for <= 2.5 GB:
+                    // Controller Zones for <= 2.5 GB based on partitioned texture budget:
                     // Normal zone: < 75%
                     // Pressure zone: 75% - 85%
                     // Critical zone: >= 85%
-                    trigger_gc_memory = (budget * 75ULL) / 100ULL;
-                    pressure_gc_memory = (budget * 80ULL) / 100ULL;
-                    critical_gc_memory = (budget * 90ULL) / 100ULL;
+                    trigger_gc_memory = (tex_budget * 75ULL) / 100ULL;
+                    pressure_gc_memory = (tex_budget * 82ULL) / 100ULL;
+                    critical_gc_memory = (tex_budget * 90ULL) / 100ULL;
                 } else {
-                    trigger_gc_memory = budget / 10 * 7;
-                    pressure_gc_memory = budget / 100 * 85;
-                    critical_gc_memory = budget / 100 * 95;
+                    trigger_gc_memory = tex_budget / 10 * 7;
+                    pressure_gc_memory = tex_budget / 100 * 85;
+                    critical_gc_memory = tex_budget / 100 * 95;
                 }
             }
         }

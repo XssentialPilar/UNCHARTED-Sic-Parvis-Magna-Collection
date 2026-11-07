@@ -21,7 +21,7 @@
 
 | Componente | Requisitos Mínimos (720p / 30–60 FPS, Calidad Media-Baja) | Requisitos Recomendados (1080p / 60 FPS Fijos, Ajustes PS4) |
 | :--- | :--- | :--- |
-| **Sistema Operativo** | Windows 7 SP1 / 8.1 (64-bit) | Windows 7 SP1 / 8.1 / 10 (64-bit) |
+| **Sistema Operativo** | Windows 10 / 11 (64-bit) | Windows 10 / 11 (64-bit) |
 | **Procesador (CPU)** | Intel Core 2 Quad Q8400 @ 2.66 GHz / AMD Phenom II X4 945 @ 3.0 GHz (o Intel Core i3-2100) | Intel Core i5-2400 @ 3.1 GHz / AMD FX-6300 @ 3.5 GHz |
 | **Memoria RAM** | $4\text{ GB}$ (`GOW3_LOW_RAM=1`) | $6\text{ GB}$ a $8\text{ GB}$ |
 | **Tarjeta Gráfica (NVIDIA)** | GeForce GTX 460 ($1\text{ GB}$) / GTX 550 Ti / GTX 650 / GTX 750 ($1\text{ GB}$) | GeForce GTX 750 Ti ($2\text{ GB}$) / GeForce GTX 660 ($2\text{ GB}$) |

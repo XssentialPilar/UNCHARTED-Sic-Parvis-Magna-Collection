@@ -673,21 +673,21 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
 
         impl->d3d9_module = LoadLibraryExW(L"d3d9.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!impl->d3d9_module) {
-            std::printf("GPU: d3d9.dll unavailable; trying DirectX 11 fallback\n");
-            return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+            std::printf("GPU: d3d9.dll unavailable for Direct3D 9\n");
+            return false;
         }
         using Direct3DCreate9ExFn = HRESULT(WINAPI*)(UINT, IDirect3D9Ex**);
         const auto create_d3d9ex = reinterpret_cast<Direct3DCreate9ExFn>(
             GetProcAddress(impl->d3d9_module, "Direct3DCreate9Ex"));
         if (!create_d3d9ex) {
             std::printf("GPU: Direct3DCreate9Ex entry point not found in d3d9.dll\n");
-            return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+            return false;
         }
         hr = create_d3d9ex(D3D_SDK_VERSION, impl->d3d9ex.ReleaseAndGetAddressOf());
         if (FAILED(hr) || !impl->d3d9ex) {
-            std::printf("GPU: Direct3DCreate9Ex failed (hr=0x%08lx); trying DirectX 11 fallback\n",
+            std::printf("GPU: Direct3DCreate9Ex failed (hr=0x%08lx)\n",
                         static_cast<unsigned long>(hr));
-            return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+            return false;
         }
 
         if (!impl->headless_test) {
@@ -726,15 +726,16 @@ bool PresenterBridge::Initialize(const Vulkan::Instance& vk_instance, void* hwnd
                 &d3dpp, nullptr, impl->d3d9_device.ReleaseAndGetAddressOf());
             if (FAILED(hr)) {
                 d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+                d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
                 hr = impl->d3d9ex->CreateDeviceEx(
                     d3d9_adapter, D3DDEVTYPE_HAL, impl->hwnd,
                     D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                     &d3dpp, nullptr, impl->d3d9_device.ReleaseAndGetAddressOf());
             }
             if (FAILED(hr) || !impl->d3d9_device) {
-                std::printf("GPU: Direct3D 9Ex CreateDeviceEx failed (hr=0x%08lx); trying DirectX 11 fallback\n",
+                std::printf("GPU: Direct3D 9Ex CreateDeviceEx failed (hr=0x%08lx)\n",
                             static_cast<unsigned long>(hr));
-                return Initialize(vk_instance, hwnd_ptr, width, height, Api::DirectX11);
+                return false;
             }
         }
 
@@ -776,8 +777,9 @@ bool PresenterBridge::CreateSharedImages(uint32_t width, uint32_t height, vk::Fo
     out_views.assign(kBufferCount, vk::ImageView{});
 
     const VkExternalMemoryHandleTypeFlagBits ext_handle_type =
-        active_api == Api::DirectX11 ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT
-                                     : VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT;
+        (active_api == Api::DirectX11 || active_api == Api::DirectX9)
+            ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT
+            : VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT;
 
     if (impl->headless_test) {
         if (active_api == Api::DirectX11 || active_api == Api::DirectX9) {
@@ -1127,6 +1129,7 @@ bool PresenterBridge::Resize(uint32_t width, uint32_t height, vk::Format view_fo
         d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
         if (FAILED(impl->d3d9_device->ResetEx(&d3dpp, nullptr))) {
             d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+            d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
             impl->d3d9_device->ResetEx(&d3dpp, nullptr);
         }
     }
@@ -1210,14 +1213,37 @@ bool PresenterBridge::Present(uint32_t image_index, bool vsync, FramePacer& pace
             ComPtr<IDirect3DSurface9> src_surface;
             if (SUCCEEDED(impl->d3d9_shared_tex[image_index]->GetSurfaceLevel(
                     0, src_surface.GetAddressOf())) && src_surface) {
-                impl->d3d9_device->StretchRect(src_surface.Get(), nullptr, backbuffer.Get(),
-                                               nullptr, D3DTEXF_NONE);
+                hr = impl->d3d9_device->StretchRect(src_surface.Get(), nullptr, backbuffer.Get(),
+                                                    nullptr, D3DTEXF_LINEAR);
+                if (FAILED(hr)) {
+                    impl->d3d9_device->StretchRect(src_surface.Get(), nullptr, backbuffer.Get(),
+                                                   nullptr, D3DTEXF_NONE);
+                }
             }
         }
 
         pacer.Wait(target_fps, vsync, display_hz, pacer_mode);
         hr = impl->d3d9_device->PresentEx(nullptr, nullptr, nullptr, nullptr, 0);
-        return SUCCEEDED(hr) || hr == D3DERR_DEVICELOST || hr == D3DERR_DEVICENOTRESET;
+        if (hr == D3DERR_DEVICELOST || hr == S_PRESENT_MODE_CHANGED || hr == D3DERR_DEVICENOTRESET) {
+            D3DPRESENT_PARAMETERS d3dpp{};
+            d3dpp.BackBufferWidth = impl->width;
+            d3dpp.BackBufferHeight = impl->height;
+            d3dpp.BackBufferFormat = D3DFMT_A8R8G8B8;
+            d3dpp.BackBufferCount = kBufferCount;
+            d3dpp.MultiSampleType = D3DMULTISAMPLE_NONE;
+            d3dpp.SwapEffect = D3DSWAPEFFECT_FLIPEX;
+            d3dpp.hDeviceWindow = impl->hwnd;
+            d3dpp.Windowed = TRUE;
+            d3dpp.EnableAutoDepthStencil = FALSE;
+            d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+            if (FAILED(impl->d3d9_device->ResetEx(&d3dpp, nullptr))) {
+                d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+                d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
+                impl->d3d9_device->ResetEx(&d3dpp, nullptr);
+            }
+            return false;
+        }
+        return SUCCEEDED(hr);
     }
 
     if (active_api == Api::DirectX11) {

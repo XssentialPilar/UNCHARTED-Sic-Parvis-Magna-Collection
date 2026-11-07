@@ -1079,11 +1079,20 @@ static ABI void u1_physics_step(float dt) {
         *u1_damp_v = powf(u1_damp_v0, scale);
         *u1_damp_w = powf(u1_damp_w0, scale);
     }
-    if (u1_collision_margin && scale < 1.0f) {
-        *u1_collision_margin = u1_collision_margin0 * (1.0f + 0.40f * (1.0f - scale));
+    static int u1_collision_scale = -1;
+    if (u1_collision_scale < 0) {
+        const char *env = getenv("GOW3_U1_COLLISION_SCALE");
+        u1_collision_scale = env && env[0] == '1';
     }
-    if (u1_ledge_offset && scale < 1.0f) {
-        *u1_ledge_offset = u1_ledge_offset0 * (1.0f + 0.80f * (1.0f - scale));
+    if (u1_collision_margin) {
+        *u1_collision_margin = (u1_collision_scale && scale < 1.0f)
+            ? u1_collision_margin0 * (1.0f + 0.40f * (1.0f - scale))
+            : u1_collision_margin0;
+    }
+    if (u1_ledge_offset) {
+        *u1_ledge_offset = (u1_collision_scale && scale < 1.0f)
+            ? u1_ledge_offset0 * (1.0f + 0.80f * (1.0f - scale))
+            : u1_ledge_offset0;
     }
 }
 /* The game data a rip-relative operand points at (disp32 at at+disp, next instruction at at+end), or
@@ -1174,9 +1183,9 @@ static void install_u1_physics(Segment *segments, uint64_t count) {
         }
     }
     if (u1_collision_margin)
-        printf("U1 physics: character collision margin %.3f adapts to frame rate (prevents wall clipping)\n", u1_collision_margin0);
+        printf("U1 physics: character collision margin %.3f preserved (authentic Havok capsule)\n", u1_collision_margin0);
     if (u1_ledge_offset)
-        printf("U1 physics: ledge hang offset %.3f adapts to frame rate (prevents falling through ledges)\n", u1_ledge_offset0);
+        printf("U1 physics: ledge hang offset %.3f preserved (authentic ledge grab alignment)\n", u1_ledge_offset0);
 
     if (!u1_sticky_omega && !u1_settle_stop && !u1_damp_w && !u1_collision_margin && !u1_ledge_offset) return;
     unsigned char *stub = allocate_near_image(page_size);
