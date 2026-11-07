@@ -1654,8 +1654,9 @@ void RedrawDpad(Picture& pic, const std::string& label) {
 }
 
 // Drake's Journal & Map pictures (512x256 BC1, upright):
-// Preserves the antique leather journal / map, cleanly clears the PS4 touchpad badge,
-// and blits the authentic vector keycap (TAB or configured key) with natural 1.5U proportions.
+// Preserves the antique leather journal / map, completely eliminates the PS4 touchpad badge
+// and tapping hand icon, and blits the authentic vector keycap (TAB or configured key)
+// centered right where the touchpad was, with natural 1.5U proportions.
 void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool is_map) {
     const int w = pic.w, h = pic.h;
     if (w < 256 || h < 128) return;
@@ -1663,20 +1664,30 @@ void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool
     const float sx = float(w) / 512.0f;
     const float sy = float(h) / 256.0f;
 
-    const float cx = (is_map ? 238.0f : 246.0f) * sx;
-    const float cy = (is_map ? 162.0f : 158.0f) * sy;
+    // True physical center of the touchpad prompt badge in the 512x256 texture:
+    const float cx = 206.0f * sx;
+    const float cy = 134.0f * sy;
 
-    // Clear ONLY the silver touchpad badge pixels in the badge area, preserving the book
-    const int bx0 = int(185.0f * sx), bx1 = int(310.0f * sx);
-    const int by0 = int(100.0f * sy), by1 = int(215.0f * sy);
+    // The PS4 touchpad badge spans x in [105, 310] * sx, y in [62, 208] * sy.
+    // For x >= 136 * sx, everything is strictly the touchpad badge, finger icon, or transparent rim.
+    // For x < 136 * sx, the left rim overlaps the right edge of the leather journal.
+    // Warm leather tones (R > B + 20 and R > 50) belong to the journal and are strictly preserved;
+    // everything else in the badge bounding box is completely wiped to 0.
+    const int bx0 = int(105.0f * sx), bx1 = int(310.0f * sx);
+    const int by0 = int(62.0f * sy),  by1 = int(208.0f * sy);
+    const int leather_bound = int(136.0f * sx);
+
     for (int y = std::max(0, by0); y <= std::min(h - 1, by1); ++y) {
         for (int x = std::max(0, bx0); x <= std::min(w - 1, bx1); ++x) {
             u8* p = &pic.rgba[(y * w + x) * 4];
-            if (p[3] < 50) continue;
-            float luma = 0.3f * p[0] + 0.59f * p[1] + 0.11f * p[2];
-            int chroma = std::max({p[0], p[1], p[2]}) - std::min({p[0], p[1], p[2]});
-            if (luma > 55.0f && chroma < 28 && p[0] < p[2] + 25) {
+            if (p[3] < 30) continue;
+            if (x >= leather_bound) {
                 p[0] = p[1] = p[2] = p[3] = 0;
+            } else {
+                bool is_book = (p[0] > p[2] + 20 && p[0] > 50);
+                if (!is_book) {
+                    p[0] = p[1] = p[2] = p[3] = 0;
+                }
             }
         }
     }
@@ -1686,30 +1697,61 @@ void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool
         const auto* asset = PromptAssetBank::Instance().FindWide(effective_key, 0);
         if (!asset) asset = PromptAssetBank::Instance().Find(effective_key, 0);
         if (!asset) asset = PromptAssetBank::Instance().Find("TAB", 0);
+
+        float th = 86.0f * sy;
+        float aspect = (asset && asset->uh > 0.0f) ? (asset->uw / asset->uh) : 1.5f;
+        float tw = th * aspect;
+        float hw = tw / 2.0f, hh = th / 2.0f;
+        float rc = 0.22f * hh;
+
+        Canvas canvas = ToCanvas(pic);
+        Painter p{canvas, 0, 0, w, h, false};
+        auto key_dist = [=](float x, float y) {
+            return RoundBox(x, y, cx, cy, hw, hh, rc);
+        };
+
+        // 1. Drop shadow:
+        p.FillShaded([=](float x, float y) {
+            return RoundBox(x, y, cx, cy + 3.0f * sy, hw + 2.0f, hh + 2.0f, rc + 2.0f);
+        }, [](float, float) { return Rgb{0.03f, 0.03f, 0.03f}; });
+
+        // 2. Warm antique golden halo:
+        p.Halo(key_dist, 8.0f * sy, 0.70f, glow);
+
+        // 3. Crisp geometric contour stroke:
+        p.Stroke([=](float x, float y) { return key_dist(x, y) - 0.5f; }, 2.0f * sy, glow);
+
+        // 4. Dark obsidian body backing:
+        p.Fill([=](float x, float y) { return key_dist(x, y); }, Rgb{0.07f, 0.09f, 0.11f});
+        FromCanvas(canvas, pic);
+
+        // Ensure full BC1 opacity for keycap body, stroke, and halo:
+        const int kx0 = std::clamp(int(cx - hw - 8.0f * sx), 0, w - 1);
+        const int kx1 = std::clamp(int(cx + hw + 8.0f * sx), 0, w - 1);
+        const int ky0 = std::clamp(int(cy - hh - 8.0f * sy), 0, h - 1);
+        const int ky1 = std::clamp(int(cy + hh + 8.0f * sy), 0, h - 1);
+        for (int y = ky0; y <= ky1; ++y) {
+            for (int x = kx0; x <= kx1; ++x) {
+                if (key_dist(x + 0.5f, y + 0.5f) <= 6.0f * sy) {
+                    pic.rgba[(y * w + x) * 4 + 3] = 255;
+                }
+            }
+        }
+
+        // 5. Blit authentic vector keycap:
         if (asset) {
             const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
             if (src) {
-                float th = 70.0f * sy;
-                float tw = th * (asset->uw / asset->uh);
-                float hw = tw / 2.0f, hh = th / 2.0f;
-                float rc = 0.22f * hh;
-
-                Canvas canvas = ToCanvas(pic);
-                Painter p{canvas, 0, 0, w, h, false};
-                auto key_dist = [=](float x, float y) {
-                    return RoundBox(x, y, cx, cy, hw, hh, rc);
-                };
-                p.FillShaded([=](float x, float y) { return RoundBox(x, y, cx, cy + 2.5f * sy, hw + 2.0f, hh + 2.0f, rc + 2.0f); },
-                             [](float, float) { return Rgb{0.04f, 0.04f, 0.04f}; });
-                p.Halo(key_dist, 8.0f * sy, 0.55f, glow);
-                p.Stroke([=](float x, float y) { return key_dist(x, y) - 0.5f; }, 1.5f, glow);
-                p.Fill([=](float x, float y) { return key_dist(x, y); }, Rgb{0.07f, 0.09f, 0.11f});
-                FromCanvas(canvas, pic);
-
                 BlitAssetToPicture(pic, *asset, src, cx, cy, tw, th);
                 return;
             }
         }
+
+        Canvas canvas2 = ToCanvas(pic);
+        Painter p2{canvas2, 0, 0, w, h, false};
+        DrawPictureLabel(p2, effective_key, cx, cy, th, tw, glow);
+        FromCanvas(canvas2, pic);
+        return;
     } else {
         Canvas canvas = ToCanvas(pic);
         Painter p{canvas, bx0, by0, bx1 + 1, by1 + 1, false};
@@ -1728,6 +1770,13 @@ void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool
             return RoundBox(x, y, cx + 3.5f, cy + 3.5f, s, s, 1.5f);
         }, ink);
         FromCanvas(canvas, pic);
+        for (int y = by0; y <= by1; ++y) {
+            for (int x = bx0; x <= bx1; ++x) {
+                if (std::hypot(x - cx, y - cy) <= r + 4.0f) {
+                    pic.rgba[(y * w + x) * 4 + 3] = 255;
+                }
+            }
+        }
     }
 }
 
