@@ -3,144 +3,122 @@
 > **Sic Parvis Magna** — *Greatness from small beginnings.*
 
 [![Downloads](https://img.shields.io/badge/Downloads-GitHub_Releases-C69D60?style=flat-square)](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases)
-![Platform](https://img.shields.io/badge/Platform-Windows-3474A6?style=flat-square)
-![Development](https://img.shields.io/badge/Status-Active_Development-455E56?style=flat-square)
-![Technology](https://img.shields.io/badge/Technology-C%2B%2B20%20%2F%20C%2B%2B23-00599C?style=flat-square)
+![Platforms](https://img.shields.io/badge/Platforms-Windows_%7C_Linux_Development-3474A6?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Active_Development-455E56?style=flat-square)
+![Technology](https://img.shields.io/badge/Technology-Native_C%2B%2B-00599C?style=flat-square)
 
-**An independent PC compatibility and performance project built to make Nathan Drake's adventures more adaptable, accessible, and enjoyable across different generations of hardware.**
+**An independent PC compatibility and performance project dedicated to making Nathan Drake's adventures more accessible, customizable, and enjoyable across different generations of hardware.**
 
-UNCHARTED: Sic Parvis Magna Collection brings together a dedicated launcher, keyboard and mouse interface improvements, expanded display options, and low-level performance engineering. The aim is to give players more control over how their experience looks, feels, and runs—while preserving the character of the original games.
+UNCHARTED: Sic Parvis Magna Collection combines a dedicated launcher, keyboard and mouse improvements, adaptable display options, and low-level runtime engineering. Our goal is straightforward: give players greater control over their experience while preserving the atmosphere and identity of the original games.
 
 This is an **unofficial community project**, not an official PC release. **Original game files are not included.**
 
 ## Download and Get Started
 
-**[View Downloads and Release Notes](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases)**
+**[Downloads, installation details, and release notes](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases)**
 
-For new users, the **complete package** is the recommended download. It includes the **Explorer's Desk launcher**, native runtime components, keyboard and mouse prompt resources, and the supporting files needed by the package.
+Packages are distributed by operating system and processor architecture. Please choose the package matching your computer; a launcher-only or experimental build should not be mistaken for a complete playable package.
 
-1. Download the latest complete ZIP package from the **Releases** page.
-2. Extract all files to a folder of your choice.
-3. Open `Uncharted - Sic Parvis Magna Collection.exe`.
-4. Select your compatible, legally obtained game directory, choose your preferences, and launch.
+1. Download the appropriate package from **Releases**.
+2. Extract it to a folder of your choice, keeping its internal structure intact.
+3. Open the launcher included with your package. On supported Windows packages, the native entry point is `Start Uncharted.exe`; an alternative launcher may also be provided.
+4. Select your own compatible game-file directory, configure your preferences, and choose the adventure you want to launch.
 
-A **standalone launcher** may also be available for users who already have the required runtime installed. A launcher-only download is **not** a complete first-time installation.
+Download sizes, supported packages, fixes, and platform-specific instructions belong to each Release page. This main README intentionally contains no version-specific information.
 
-Download sizes, update-specific changes, and installation notices are maintained on the relevant Release pages, keeping this README useful over time.
+## Built Around the Player
 
-## Designed Around the Player
-
-| Experience | What it brings to PC |
+| Experience | What it offers |
 | :--- | :--- |
-| **Explorer's Desk** | One place to manage your game directory, graphics, resolution, display mode, language, and update checks. |
-| **Keyboard and mouse interface** | Crisp, vector-derived key prompts with dimensions appropriate to each key, including larger keys such as Tab and Backspace. |
-| **Flexible displays** | Experimental adaptations for 4:3, 16:9, 16:10, and 21:9, aiming to make use of available screen space while preserving correct proportions. |
-| **Display modes** | Fullscreen, Borderless Window, and Windowed operation. |
-| **Scalable graphics** | Shadow and texture settings intended to affect real rendering workloads, giving players a useful quality/performance choice. |
-| **Performance-minded runtime** | Work on frame pacing, memory residency, streaming, and rendering efficiency to improve consistency—not merely momentary peak FPS. |
-| **Continued development** | Community feedback and launcher update checks help guide future improvements. |
+| **Explorer's Desk** | A central place to manage games, graphics, displays, controls, language, and update checks. |
+| **Keyboard and mouse support** | Clear, vector-derived prompts designed around real key proportions instead of stretched controller artwork. |
+| **Flexible display options** | Adaptation work for 4:3, 16:9, 16:10, 21:9 and other resolutions, with attention to correct framing and UI proportions. |
+| **Multiple window modes** | Fullscreen, borderless window, and standard window operation where supported. |
+| **Configurable graphics** | Texture, shadow, memory, and related quality controls intended to offer meaningful performance tradeoffs. |
+| **Hardware-aware operation** | Detection of available graphics adapters, with automatic and user-directed selection where supported by the active rendering backend. |
+| **Performance engineering** | Continued work on frame pacing, shader preparation, visibility, streaming, and memory efficiency. |
+| **Platform-aware updates** | Update channels designed to match the correct operating system and architecture while preserving user settings. |
 
-### A Small Beginning, a Meaningful Result
+## Windows and Linux Compatibility
 
-**An early test reported an average of 34 FPS using CPU-integrated graphics with 512 MB of VRAM or less shown in the system's configuration or telemetry.**
+**Windows 7 SP1, Windows 8, and Windows 8.1 are included in the project's native compatibility work**, alongside Windows 10 and Windows 11. Dedicated launcher builds and shared-library components are being developed for both **32-bit (x86)** and **64-bit (x64)** Windows where applicable.
 
-That result is encouraging because the project has primarily targeted hardware with **1 GB or 2 GB of VRAM**. It suggests that some configurations below the original memory reference may still be able to run the game.
+It is important to distinguish **launcher compatibility** from **playable game-runtime compatibility**:
 
-**What the result does—and does not—mean:**
+| Platform | Project coverage | Current qualification |
+| :--- | :--- | :--- |
+| **Windows 10 / 11, x64** | Native launcher, shared runtime, and game execution development | Primary Windows gameplay and testing targets; consult each Release for tested builds. |
+| **Windows 7 SP1 / 8 / 8.1, x64** | Native launcher and legacy runtime compatibility work | Experimental builds; full gameplay and legacy OS validation remain ongoing. |
+| **Windows x86 (32-bit)** | Native launcher, configuration, and supporting tools | The existing 64-bit game runtime cannot run directly on a 32-bit Windows host. |
+| **Linux x64** | Native C++/SDL3, ELF runtime components, and Vulkan-based development | Experimental; native gameplay requires further real-hardware verification. |
+| **Linux x86** | Feasibility research | Not a verified playable target. |
 
-- **34 FPS is a reported average from a particular test**, not a guaranteed frame rate or an established minimum specification.
-- Integrated graphics can draw on **shared system memory**. A reported 512 MB allocation does not necessarily represent all memory accessible to the GPU.
-- The exact GPU/CPU model, game build, resolution, graphics settings, driver, and frame-time distribution should accompany a reproducible benchmark before broader compatibility claims are made.
-
-We believe performance improvements should be judged by **how steadily the game plays**, not by a single impressive number.
+All native Linux work is intended to run without Wine or Proton. An available download does **not** automatically mean that gameplay has been verified on the listed platform. The relevant Release notes provide the current package status and limitations.
 
 ## Hardware Reference Profiles
 
-These preserve the project's **original minimum and recommended engineering profiles**. They are **development and testing targets**, not a certified compatibility list. The 512 MB integrated-graphics observation is an *experimental result below the reference minimum*; it does not replace the baseline.
+The following are **engineering and optimization targets**, not certified requirements or guaranteed frame rates. Actual results vary with game build, drivers, scene complexity, system memory, and graphics capabilities.
 
 | Component | Minimum reference — 720p / 30 FPS target | Recommended reference — 1080p / 60 FPS target |
 | :--- | :--- | :--- |
-| **Operating system** | Windows 10/11, 64-bit | Windows 10/11, 64-bit |
-| **Processor** | Intel Core 2 Quad Q8400 / AMD Phenom II X4 945 (or comparable CPU) | Intel Core i5-2400 / AMD FX-6300 (or comparable CPU) |
-| **System memory** | 4 GB RAM | 6–8 GB RAM |
-| **NVIDIA graphics reference** | GTX 460 / GTX 550 Ti / GTX 650 / GTX 750, 1 GB class | GTX 750 Ti / GTX 660, 2 GB class |
-| **AMD graphics reference** | Radeon HD 5770 / HD 6790 / HD 7750, 1 GB class | Radeon HD 7850 / R7 265 / R9 270, 2 GB class |
+| **Processor** | Intel Core 2 Quad Q8400 / AMD Phenom II X4 945, or comparable | Intel Core i5-2400 / AMD FX-6300, or comparable |
+| **System RAM** | 4 GB | 6–8 GB |
+| **NVIDIA GPU reference** | GTX 460 / 550 Ti / 650 / 750, 1 GB class | GTX 750 Ti / 660, 2 GB class |
+| **AMD GPU reference** | Radeon HD 5770 / 6790 / 7750, 1 GB class | Radeon HD 7850 / R7 265 / R9 270, 2 GB class |
 | **Physical VRAM reference** | 1 GB | 2 GB |
 | **Project-managed VRAM target** | Up to 820 MiB | Up to 1,720 MiB |
-| **Storage estimate** | Approximately 40 GB for the relevant game files; depends on the build | Same estimate; an SSD is preferable |
-| **Graphics capability** | Compatible Direct3D 11 feature-level or Vulkan backend, as supported by the runtime and driver | Same, with sufficient performance headroom |
+| **Storage** | Approximately 40 GB for compatible game files, depending on the build | Similar; SSD preferred |
+| **Graphics API** | Compatible Direct3D or Vulkan backend, as supported by the operating system, GPU, and driver | Same, with greater performance headroom |
 
-**Important compatibility details**
+An early individual test reported approximately **34 FPS average on integrated graphics with a reported VRAM allocation of 512 MB or less**. This is an encouraging observation, **not** a new minimum requirement or a reproducible cross-hardware benchmark. Integrated GPUs may use additional shared system memory, and detailed test conditions are needed for direct comparisons.
 
-- The **launcher targets modern 64-bit Windows**. Windows 7 SP1 and Windows 8.1 were historical research targets and are **not part of the stated compatibility baseline**.
-- The listed CPU and GPU families describe **performance research classes**, not individually certified compatible systems.
-- A GPU's advertised DirectX support does not guarantee the required DXGI interfaces or Vulkan features. In particular, **Vulkan 1.3 should not be assumed available on older GPUs**.
-- The **820 MiB / 1,720 MiB limits** describe engine-managed budget targets. They do not cap every allocation made by the game, operating system, or graphics driver.
-- A 30 or 60 FPS goal is **not a promise of a locked frame rate**. Results depend on the scene, game build, driver, available RAM/VRAM, and graphics settings.
+## The Technology Behind the Experience
 
-## The Engineering Behind the Experience
+### Shared Native Architecture
 
-The framework uses **C++20/C++23** and focuses on measurable improvements in the rendering, presentation, memory, and input paths.
+The project is moving toward a common C++ codebase with platform-specific components. **SPMCore** provides a foundation for configuration, hardware information, runtime coordination, and other shared services. Windows uses native DLL builds; Linux uses native shared libraries (`.so`). The native Explorer's Desk interface is being developed using C++ and SDL3, with existing working launchers retained during the transition.
 
-### Efficient Memory Use
+The goal is a consistent user experience without mixing Windows/Linux binaries or x86/x64 dependencies. Package updates are designed around distinct platform identifiers so that an update for one system is not offered to an incompatible installation.
 
-The [VRAM budget manager](Project/include/unc/graphics/vram_budget_mgr.hpp) is designed around pressure-aware resource residency. Its reference policy distinguishes normal usage (below **80%**), elevated pressure (**80–88%**), and critical pressure (**88% and above**). Texture mip selection, safe eviction, and [transient render-target reuse](Project/include/unc/graphics/transient_rt_pool.hpp) can help reduce unnecessary memory pressure when the active backend supports them.
+### Rendering, VRAM, and Frame Pacing
 
-**Visibility is not the same as residency:** objects hidden by walls should avoid unnecessary drawing where culling is effective, but resources must only be released after they are no longer needed by the GPU or an imminent scene transition.
+The [VRAM budget manager](Project/include/unc/graphics/vram_budget_mgr.hpp) is designed to respond to memory pressure using texture-detail selection, safe resource eviction, and streaming controls. [Transient render-target reuse](Project/include/unc/graphics/transient_rt_pool.hpp) and visibility-aware rendering seek to reduce unnecessary GPU work without discarding resources still needed by the scene.
 
-### Consistent Frame Delivery
-
-At **60 FPS**, each frame has approximately **16.67 ms** to complete. The [frame pacing system](Project/include/unc/core/frame_pacer.hpp) targets more predictable delivery, while streaming queues and per-frame allocation policies aim to reduce avoidable stalls. The project's **sub-0.45 ms jitter** figure is a controlled-test engineering objective, **not a universal guarantee**.
+At 60 FPS, the frame-time budget is approximately **16.67 ms**. The [frame pacing system](Project/include/unc/core/frame_pacer.hpp) and related scheduling work prioritize consistency and fewer avoidable stalls. Benchmark objectives are **not guarantees** for every device or scene.
 
 ### Display and Input Adaptation
 
-Different screen shapes require coordinated camera projection, scene framing, UI placement, and pointer mapping. The [input mapper](Project/include/unc/input/input_mapper.hpp) independently adjusts horizontal and vertical coordinates to follow the active viewport. Changing the output aspect ratio alone is insufficient: the game must expose the appropriate scene area and preserve UI proportions.
+Correct aspect-ratio support requires more than changing the output resolution. The camera, visible scene area, HUD, and pointer coordinates must remain aligned. The [input mapper](Project/include/unc/input/input_mapper.hpp) handles independent horizontal and vertical viewport transformations, while PC-specific key artwork preserves the distinct dimensions of keys such as Tab, Shift, and Backspace.
 
-The input presentation work also replaces legacy controller-oriented prompt artwork with PC-appropriate keyboard and mouse geometry. Larger keys retain their distinct dimensions rather than being stretched into a uniform square.
-
-### Code and Documentation
+### Source and Development
 
 - [Runtime architecture](docs/ARCHITECTURE.md)
 - [Input pipeline](docs/INPUT_PIPELINE.md)
 - [Performance and VRAM budgets](docs/PERFORMANCE_BUDGETS.md)
-- [Native graphics sources](Project/native/graphics/)
+- [Graphics sources](Project/native/graphics/)
 - [Project headers](Project/include/unc/)
 
-To build from a suitable Windows development environment, the repository provides:
+For development builds on a suitable Windows toolchain:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Project\tools\Build.ps1 -Config Release
 powershell -ExecutionPolicy Bypass -File .\Project\tools\Package.ps1
 ```
 
-Build prerequisites and available targets depend on the source tree and development environment.
+Build prerequisites, CI pipelines, and available targets depend on the development environment. Consult the source tree and workflow definitions for platform-specific details.
 
-## Development and Feedback
+## Development, Support, and Feedback
 
-**The project is under active development.** Features and compatibility may differ across game builds, graphics APIs, drivers, and hardware. Display adaptation remains experimental in some situations, and visual artifacts, incomplete prompt replacements, or uneven performance may still occur.
+This project remains under active development. Native Linux gameplay, legacy Windows verification, complete launcher feature parity, additional rendering improvements, and wider hardware validation are ongoing areas of work. Some graphics settings, display modes, or UI adaptations may behave differently across devices and builds.
 
-If something does not work as expected, please [open an issue](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/issues) with your game/build, system specifications, graphics settings, reproduction steps, and—where available—logs, screenshots, or frame-time data.
+If you experience an issue, please [open a GitHub Issue](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/issues) with your operating system, CPU/GPU, game build, display settings, steps to reproduce, and any useful logs or screenshots.
 
-Your feedback helps turn promising results into reliable improvements. Thank you for testing the project and supporting its development.
-
-## Frequently Asked Questions
-
-**Is this an official PC release?**  
-No. This is an independent community compatibility and performance project.
-
-**Are the original games included?**  
-No. You must supply compatible game files that you are legally entitled to use.
-
-**Does the 34 FPS integrated-graphics result mean 512 MB is now the minimum requirement?**  
-No. It is an encouraging individual test result, not a verified minimum hardware specification.
-
-**Will all supported resolutions, GPUs, and graphics settings perform identically?**  
-No. The project is actively being tested and refined; actual behavior varies with the hardware and game configuration.
+Thank you for helping us turn promising engineering work into a dependable experience for more players.
 
 ## Legal and Attribution
 
-UNCHARTED and related trademarks, characters, and original game assets belong to their respective rights holders. This project is **not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment, PlayStation, Naughty Dog, or Bluepoint Games**. It does not grant permission to distribute proprietary game files.
+UNCHARTED and related trademarks, characters, and original game assets belong to their respective rights holders. This project is **not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment, PlayStation, Naughty Dog, or Bluepoint Games**. It does not include or grant permission to distribute proprietary game files.
 
 ---
 
-**Sic Parvis Magna.** Greatness from small beginnings.
+**Sic Parvis Magna.** *Greatness from small beginnings.*
