@@ -78,8 +78,14 @@ void runtime_gamesettings_tick(void) {
         sun = 0.0f;
         light = 0.0f;
     } else if (shad_q == 0) {
-        sun *= 0.50f;
-        light *= 0.50f;
+        sun *= 0.35f;
+        light *= 0.35f;
+    } else if (shad_q == 1) {
+        sun *= 0.70f;
+        light *= 0.70f;
+    } else if (shad_q == 3) {
+        sun *= 1.40f;
+        light *= 1.40f;
     }
 
     static float current_fade = 1.0f;

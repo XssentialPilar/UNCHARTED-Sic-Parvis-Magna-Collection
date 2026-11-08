@@ -112,6 +112,13 @@ bool CanBlitToSwapchain(const vk::PhysicalDevice physical_device, vk::Format for
 
 static vk::Rect2D FitImage(s32 frame_width, s32 frame_height, s32 swapchain_width,
                            s32 swapchain_height) {
+    static const bool fill_screen = [] {
+        const char* env = std::getenv("GOW3_FILL_SCREEN");
+        return !env || env[0] != '0';
+    }();
+    if (fill_screen) {
+        return vk::Rect2D{{0, 0}, {static_cast<u32>(swapchain_width), static_cast<u32>(swapchain_height)}};
+    }
     float frame_aspect = static_cast<float>(frame_width) / frame_height;
     float swapchain_aspect = static_cast<float>(swapchain_width) / swapchain_height;
 

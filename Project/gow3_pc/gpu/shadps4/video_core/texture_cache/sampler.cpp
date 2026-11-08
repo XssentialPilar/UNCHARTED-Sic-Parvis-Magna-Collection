@@ -30,18 +30,17 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
     // SPM Master README Section 3.2: Global Mipmap LOD Bias (+1.0 on 1 GB / Low VRAM, +0.35 on 2 GB)
     // slashes active texture working set by up to 75% on world colour samplers while leaving UI,
     // LUTs, render targets, and shadow compare samplers untouched.
-    static const float global_mip_lod_bias = [] {
-        const char* env = std::getenv("GOW3_MIP_LOD_BIAS");
-        float value = env && env[0] ? static_cast<float>(std::atof(env)) : 0.0f;
-        if (gow3gpu_settings_texture_quality() == 0 && value < 1.0f) {
-            value = 1.0f;
-        }
-        if (value != 0.0f) {
-            std::printf("GPU: Global world texture Mip LOD bias %.2f active (GOW3_MIP_LOD_BIAS)\n",
-                        value);
-        }
-        return std::clamp(value, -2.0f, 3.0f);
-    }();
+    const int tex_quality = gow3gpu_settings_texture_quality();
+    float global_mip_lod_bias = 0.0f;
+    const char* env_lod = std::getenv("GOW3_MIP_LOD_BIAS");
+    if (env_lod && env_lod[0]) {
+        global_mip_lod_bias = static_cast<float>(std::atof(env_lod));
+    } else {
+        if (tex_quality == 0) global_mip_lod_bias = 1.5f;
+        else if (tex_quality == 1) global_mip_lod_bias = 0.5f;
+        else if (tex_quality == 3) global_mip_lod_bias = -0.5f;
+    }
+    global_mip_lod_bias = std::clamp(global_mip_lod_bias, -2.0f, 3.0f);
     const bool apply_world_lod_bias =
         global_mip_lod_bias != 0.0f && !is_depth &&
         sampler.mip_filter != AmdGpu::MipFilter::None && sampler.MaxLod() >= 2.0f;

@@ -1221,7 +1221,8 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
     key.stencil_format = db_enabled && regs.depth_buffer.StencilValid()
                              ? regs.depth_buffer.stencil_info.format
                              : AmdGpu::DepthBuffer::StencilFormat::Invalid;
-    key.depth_clamp_enable = !regs.depth_render_override.disable_viewport_clamp;
+    key.depth_clamp_enable =
+        !regs.depth_render_override.disable_viewport_clamp || regs.clipper_control.zclip_near_disable;
     key.depth_clip_enable = regs.clipper_control.ZclipEnable();
     key.clip_space = regs.clipper_control.clip_space;
     key.provoking_vtx_last = regs.polygon_control.provoking_vtx_last;

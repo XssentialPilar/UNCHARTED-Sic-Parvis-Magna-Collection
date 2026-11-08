@@ -1093,7 +1093,7 @@ std::vector<u8> Compose(const Canvas& canvas, const u8* guest, Kind kind) {
                 o[0] = byte(c.r), o[1] = byte(c.g), o[2] = byte(c.b);
                 break;
             case Kind::Alpha:
-                o[0] = o[1] = o[2] = byte(a);
+                o[0] = o[1] = o[2] = o[3] = byte(a);
                 break;
             default:
                 break;
@@ -1295,7 +1295,7 @@ Canvas ToCanvas(const Picture& pic) {
         for (int k = 0; k < 3; ++k) {
             c.texels[i * 4 + k] = pic.rgba[i * 4 + k] / 255.0f;
         }
-        c.texels[i * 4 + 3] = 1.0f;
+        c.texels[i * 4 + 3] = pic.rgba[i * 4 + 3] / 255.0f;
     }
     return c;
 }
@@ -1304,6 +1304,7 @@ void FromCanvas(const Canvas& c, Picture& pic) {
         for (int k = 0; k < 3; ++k) {
             pic.rgba[i * 4 + k] = u8(std::clamp(c.texels[i * 4 + k] * 255.0f + 0.5f, 0.0f, 255.0f));
         }
+        pic.rgba[i * 4 + 3] = (c.texels[i * 4 + 3] >= 0.15f) ? 255 : 0;
     }
 }
 
@@ -1379,14 +1380,22 @@ void RedrawFace(Picture& pic, const std::string& label, bool controller) {
             }
         }
     }
-    if (nb == 0 || x1 < x0) {
-        return;
+    if (nb > 0) {
+        for (float& v : bg) {
+            v /= nb;
+        }
     }
-    for (float& v : bg) {
-        v /= nb;
+    float rx = w * 0.38f, ry = h * 0.38f, r = rx;
+    if (x1 >= x0) {
+        cx = (x0 + x1 + 1) / 2.0f;
+        cy = (y0 + y1 + 1) / 2.0f;
+        rx = (x1 - x0 + 1) / 2.0f;
+        ry = (y1 - y0 + 1) / 2.0f;
+        r = std::min(rx, ry);
+    } else {
+        cx = w / 2.0f;
+        cy = h / 2.0f;
     }
-    cx = (x0 + x1 + 1) / 2.0f, cy = (y0 + y1 + 1) / 2.0f;
-    const float rx = (x1 - x0 + 1) / 2.0f, ry = (y1 - y0 + 1) / 2.0f, r = std::min(rx, ry);
     const auto unit = [=](float x, float y) { return std::hypot((x - cx) / rx, (y - cy) / ry); };
 
     if (!controller) {
@@ -1424,14 +1433,7 @@ void RedrawFace(Picture& pic, const std::string& label, bool controller) {
         }
 
         // Wipe ALL traces of the previous circular PlayStation button body, rim, and circular glow
-        for (int y = 0; y < h; ++y) {
-            for (int x = 0; x < w; ++x) {
-                if (unit(x + 0.5f, y + 0.5f) <= 1.65f) {
-                    u8* p = &pic.rgba[(y * w + x) * 4];
-                    p[0] = p[1] = p[2] = p[3] = 0;
-                }
-            }
-        }
+        std::memset(pic.rgba.data(), 0, pic.rgba.size());
 
         // Look up authentic keycap asset
         const auto* asset = PromptAssetBank::Instance().Find1U(label, 0);
@@ -1535,6 +1537,47 @@ void RedrawFace(Picture& pic, const std::string& label, bool controller) {
 // Uncharted 3's shoulder buttons (upright): the "L1" etc. on the dark button replaced.
 void RedrawShoulder(Picture& pic, const std::string& label) {
     const int w = pic.w, h = pic.h;
+    if (w < 32 || h < 32) return;
+
+    if (!label.empty() && label[0] != '#') {
+        // Keyboard & Mouse on shoulder prompt: wipe PS4 shoulder button frame completely
+        std::memset(pic.rgba.data(), 0, pic.rgba.size());
+        const float cx = w / 2.0f, cy = h / 2.0f;
+        const auto* asset = PromptAssetBank::Instance().FindWide(label, 0);
+        if (!asset) asset = PromptAssetBank::Instance().Find1U(label, 0);
+        if (!asset) asset = PromptAssetBank::Instance().Find(label, 0);
+        const float aspect = asset ? (asset->uw / asset->uh) : 1.0f;
+        float kh = h * 0.78f;
+        float kw = kh * aspect;
+        if (kw > w * 0.90f) {
+            kw = w * 0.90f;
+            kh = kw / aspect;
+        }
+        const float hw = kw / 2.0f, hh = kh / 2.0f;
+        const float rc = 0.24f * hh;
+        Canvas canvas = ToCanvas(pic);
+        Painter p{canvas, 0, 0, w, h, false};
+        auto key_dist = [=](float x, float y) {
+            return RoundBox(x, y, cx, cy, hw, hh, rc);
+        };
+        p.Halo(key_dist, 0.35f * hh, 0.65f, glow);
+        p.Stroke([=](float x, float y) { return key_dist(x, y) - 0.5f; }, 2.0f, glow);
+        p.Fill([=](float x, float y) { return key_dist(x, y); }, Rgb{0.06f, 0.08f, 0.10f});
+        FromCanvas(canvas, pic);
+        if (asset) {
+            const uint8_t* src = PromptAssetBank::Instance().GetData(*asset);
+            if (src) {
+                BlitAssetToPicture(pic, *asset, src, cx, cy, kw, kh);
+                return;
+            }
+        }
+        Canvas canvas2 = ToCanvas(pic);
+        Painter p2{canvas2, 0, 0, w, h, false};
+        DrawPictureLabel(p2, label, cx, cy, kh, kw, glow);
+        FromCanvas(canvas2, pic);
+        return;
+    }
+
     int x0 = w, y0 = h, x1 = -1, y1 = -1;
     float body[3] = {}, n_body = 0;
     for (int y = h / 16; y < h - h / 16; ++y) {
@@ -1619,7 +1662,7 @@ void RedrawDpad(Picture& pic, const std::string& label) {
 
     const std::string key = label.empty() ? "3" : label;
     const float cx = w / 2.0f, cy = h / 2.0f;
-    const float s = w * 0.58f;
+    const float s = w * 0.82f;
     const float hw = s / 2.0f, hh = s / 2.0f;
     const float rc = 0.24f * hh;
 
@@ -1665,26 +1708,26 @@ void RedrawJournal(Picture& pic, const std::string& label, bool controller, bool
     const float sy = float(h) / 256.0f;
 
     // True physical center of the touchpad prompt badge in the 512x256 texture:
-    const float cx = 206.0f * sx;
-    const float cy = 134.0f * sy;
+    const float cx = is_map ? 220.0f * sx : 206.0f * sx;
+    const float cy = is_map ? 140.0f * sy : 130.0f * sy;
 
-    // The PS4 touchpad badge spans x in [105, 310] * sx, y in [62, 208] * sy.
-    // For x >= 136 * sx, everything is strictly the touchpad badge, finger icon, or transparent rim.
-    // For x < 136 * sx, the left rim overlaps the right edge of the leather journal.
-    // Warm leather tones (R > B + 20 and R > 50) belong to the journal and are strictly preserved;
+    // The PS4 touchpad badge spans x in [95, 340] * sx, y in [45, 225] * sy.
+    // For x >= 130 * sx, everything is strictly the touchpad badge, finger icon, or prompt border.
+    // For x < 130 * sx, the left rim overlaps the right edge of the leather journal.
+    // Warm leather tones (R > B + 15 and R > 40) belong to the journal and are strictly preserved;
     // everything else in the badge bounding box is completely wiped to 0.
-    const int bx0 = int(105.0f * sx), bx1 = int(310.0f * sx);
-    const int by0 = int(62.0f * sy),  by1 = int(208.0f * sy);
-    const int leather_bound = int(136.0f * sx);
+    const int bx0 = int(95.0f * sx), bx1 = int(340.0f * sx);
+    const int by0 = int(45.0f * sy),  by1 = int(225.0f * sy);
+    const int leather_bound = int(130.0f * sx);
 
     for (int y = std::max(0, by0); y <= std::min(h - 1, by1); ++y) {
         for (int x = std::max(0, bx0); x <= std::min(w - 1, bx1); ++x) {
             u8* p = &pic.rgba[(y * w + x) * 4];
-            if (p[3] < 30) continue;
+            if (p[3] < 20) continue;
             if (x >= leather_bound) {
                 p[0] = p[1] = p[2] = p[3] = 0;
             } else {
-                bool is_book = (p[0] > p[2] + 20 && p[0] > 50);
+                bool is_book = (p[0] > p[2] + 15 && p[0] > 40);
                 if (!is_book) {
                     p[0] = p[1] = p[2] = p[3] = 0;
                 }
@@ -1922,6 +1965,9 @@ std::shared_ptr<const Texels> Replacement(VAddr address, u32 guest_size, u32 mip
         label = state.labels[set][known->button];
         if (label.empty() && known->kind == Kind::Journal) {
             label = "TAB";
+        }
+        if (label.empty() && known->kind == Kind::Dpad) {
+            label = "3";
         }
         if (label.empty()) {
             return nullptr;

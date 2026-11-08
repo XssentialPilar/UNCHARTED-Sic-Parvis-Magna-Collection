@@ -32,6 +32,7 @@ public class LauncherConfig
     public string Anisotropy { get; set; } = "16"; // 1, 2, 4, 8, 16
     public string FpsLimit { get; set; } = "60"; // 30, 60, 90, 120, 0
     public string VSync { get; set; } = "1"; // 0, 1
+    public string DisplayMode { get; set; } = "fullscreen"; // fullscreen, borderless, windowed
     public string Resolution { get; set; } = "1920x1080";
     public string OutputResolution { get; set; } = "";
     public string Upscaler { get; set; } = "off"; // off, fsr1, fsr3, fsr4, dlaa, dlss
@@ -133,21 +134,23 @@ public class LauncherConfig
         var paths = GetConfigPaths(workspaceRoot);
         LauncherConfig? loaded = null;
 
+        DateTime latestWrite = DateTime.MinValue;
         foreach (var path in paths)
         {
             try
             {
                 if (File.Exists(path))
                 {
+                    DateTime wt = File.GetLastWriteTimeUtc(path);
                     string json = File.ReadAllText(path);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                         var cfg = JsonSerializer.Deserialize<LauncherConfig>(json, options);
-                        if (cfg != null)
+                        if (cfg != null && wt >= latestWrite)
                         {
                             loaded = cfg;
-                            break;
+                            latestWrite = wt;
                         }
                     }
                 }
@@ -190,6 +193,7 @@ public class LauncherConfig
                             {
                                 case "graphics_api": if (!string.IsNullOrEmpty(val)) loaded.GraphicsApi = val; break;
                                 case "vram_budget_mb": if (!string.IsNullOrEmpty(val)) loaded.VramBudgetMb = val; break;
+                                case "display_mode": if (!string.IsNullOrEmpty(val)) loaded.DisplayMode = val; break;
                                 case "frame_pacer": if (!string.IsNullOrEmpty(val)) loaded.FramePacingMode = val; break;
                                 case "fps_limit": if (!string.IsNullOrEmpty(val)) loaded.FpsLimit = val; break;
                                 case "vsync": if (!string.IsNullOrEmpty(val)) loaded.VSync = val; break;
@@ -272,6 +276,9 @@ public class LauncherConfig
 
                 SetVal("graphics_api", GraphicsApi);
                 SetVal("vram_budget_mb", VramBudgetMb);
+                SetVal("display_mode", DisplayMode);
+                SetVal("resolution", Resolution);
+                if (!string.IsNullOrEmpty(OutputResolution)) SetVal("output_res", OutputResolution);
                 SetVal("frame_pacer", FramePacingMode);
                 SetVal("fps_limit", FpsLimit);
                 SetVal("vsync", VSync);
@@ -335,6 +342,9 @@ public class LauncherConfig
                 }
                 SetEpVal("graphics_api", GraphicsApi);
                 SetEpVal("vram_budget_mb", VramBudgetMb);
+                SetEpVal("display_mode", DisplayMode);
+                SetEpVal("resolution", Resolution);
+                if (!string.IsNullOrEmpty(OutputResolution)) SetEpVal("output_res", OutputResolution);
                 SetEpVal("frame_pacer", FramePacingMode);
                 SetEpVal("fps_limit", FpsLimit);
                 SetEpVal("vsync", VSync);

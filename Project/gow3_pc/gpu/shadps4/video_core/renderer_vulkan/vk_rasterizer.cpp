@@ -74,12 +74,12 @@ constexpr vk::PipelineStageFlags2 DepthFeedbackStages =
 constexpr vk::AccessFlags2 DepthFeedbackAccess = vk::AccessFlagBits2::eShaderRead |
                                                  vk::AccessFlagBits2::eDepthStencilAttachmentRead |
                                                  vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
-// Opt-in (GOW3_DEPTH_FEEDBACK_GENERAL=1) until tested in Uncharted 1 and 2; it removed the
-// validation hazards in Uncharted 3 but not its flicker.
+// Default enabled (unless GOW3_DEPTH_FEEDBACK_GENERAL=0) to prevent depth hazard glitches
+// in volumetric light, flashlights, and transparency feedback loops.
 bool DepthFeedbackGeneral() {
     static const bool enabled = [] {
         const char* env = std::getenv("GOW3_DEPTH_FEEDBACK_GENERAL");
-        return env && env[0] == '1';
+        return !env || env[0] != '0';
     }();
     return enabled;
 }
