@@ -60,3 +60,5 @@ UNCHARTED_KEYBOARD_MOUSE_EN_V4/
 .vscode/
 *.user
 *.suo
+/gow3_pc/
+/gow3_pc/out/

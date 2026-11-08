@@ -79,6 +79,10 @@ public class GameRunner
         string coreDir = Directory.Exists(Path.Combine(workspaceRoot, "core")) ? Path.Combine(workspaceRoot, "core") : workingDir;
         string currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
         psi.Environment["PATH"] = $"{coreDir};{Path.Combine(coreDir, "python")};{currentPath}";
+        string scriptsDir = Path.Combine(coreDir, "gow3_pc", "scripts");
+        string currentPythonPath = Environment.GetEnvironmentVariable("PYTHONPATH") ?? "";
+        psi.Environment["PYTHONPATH"] = $"{scriptsDir};{Path.Combine(workspaceRoot, "gow3_pc", "scripts")};{Path.Combine(workspaceRoot, "Project", "gow3_pc", "scripts")};{currentPythonPath}";
+        psi.Environment["PYTHONUNBUFFERED"] = "1";
 
         // Strict environment enforcement
         string[] iniCandidates = {

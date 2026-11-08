@@ -934,6 +934,12 @@ def apply_patches(image, patches):
 def game_executable():
     """The runtime as Uncharted.exe (Task Manager, Windows' graphics settings and overlays show
     this name), copied from the build output whenever that is newer."""
+    if (ROOT / "Uncharted.exe").is_file():
+        return ROOT / "Uncharted.exe"
+    if (ROOT / "gow3-probe.exe").is_file():
+        return ROOT / "gow3-probe.exe"
+    if (ROOT / "core" / "Uncharted.exe").is_file():
+        return ROOT / "core" / "Uncharted.exe"
     candidates = [
         ROOT / "Uncharted.exe",
         ROOT / "gow3-probe.exe",
@@ -941,6 +947,7 @@ def game_executable():
         ROOT / "gow3_pc/out/gow3-probe.exe",
         ROOT.parent / "Build/Windows/gow3-probe.exe",
         ROOT / "../Build/Windows/gow3-probe.exe",
+        ROOT / "Distribution/Uncharted/Uncharted.exe",
     ]
     built = None
     for cand in candidates:
@@ -949,6 +956,10 @@ def game_executable():
                 built = cand
     if built is None:
         built = ROOT / "gow3_pc/out/gow3-probe.exe"
+    if not built.exists():
+        for cand in [ROOT / "Uncharted.exe", ROOT / "gow3-probe.exe", ROOT / "core/Uncharted.exe", ROOT / "Distribution/Uncharted/Uncharted.exe"]:
+            if cand.exists():
+                return cand
     game_exe = ROOT / "gow3_pc/out/Uncharted.exe"
     if os.environ.get("UNCHARTED_TEST_PROBE_EXE") == "1":  # test: not under the game's name
         return built
@@ -958,6 +969,7 @@ def game_executable():
     if override := os.environ.get("UNCHARTED_PROBE_EXE"):
         built = Path(override)
     try:
+        game_exe.parent.mkdir(parents=True, exist_ok=True)
         built_stat = built.stat()
         if not game_exe.exists() or built_stat.st_mtime != game_exe.stat().st_mtime or \
                 built_stat.st_size != game_exe.stat().st_size:
@@ -1486,11 +1498,13 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     scripts = ROOT / "gow3_pc/scripts"
     if not scripts.exists():
         scripts = ROOT / "Project/gow3_pc/scripts"
+    prep_env = dict(os.environ)
+    prep_env["PYTHONPATH"] = str(scripts) + (os.pathsep + prep_env["PYTHONPATH"] if "PYTHONPATH" in prep_env else "")
     for script in ("prepare.py", "link_modules.py", "content_profile.py"):
         prepare_command = [sys.executable, str(scripts / script), str(game), "--out", str(out)]
         if script != "content_profile.py":
             prepare_command += ["--executable", executable]
-        subprocess.run(prepare_command, check=True)
+        subprocess.run(prepare_command, check=True, cwd=str(scripts), env=prep_env)
     patches = list(PATCHES[executable])
     if executable == "big2-ps4_Shipping.elf" and os.environ.get("UNCHARTED_TORCH_FORWARD", "1") != "0":
         patches.extend(TORCH_FORWARD_PATCHES)

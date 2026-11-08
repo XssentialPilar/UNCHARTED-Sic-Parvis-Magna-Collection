@@ -1634,9 +1634,10 @@ public partial class MainWindow : Window
 
                 {
 
-                    FileName = "python.exe",
+                    FileName = GameRunner.ResolvePython(_workspaceRoot),
+                    WorkingDirectory = Path.GetDirectoryName(toolScript) ?? _workspaceRoot,
 
-                    Arguments = $"-I \"{toolScript}\" check \"{_config.GameDir}\"",
+                    Arguments = $"\"{toolScript}\" check \"{_config.GameDir}\"",
 
                     RedirectStandardOutput = true,
 

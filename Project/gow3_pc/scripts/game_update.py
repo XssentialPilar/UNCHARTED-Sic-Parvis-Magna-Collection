@@ -6,9 +6,14 @@ or a junction / hard link on Windows without the symlink privilege, see mods.mak
 a 47 GB game costs a handful of links. Names are matched without regard to case.
 """
 import os
+import sys
 from pathlib import Path
 import shutil
 import tempfile
+
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
 
 from mods import LINKED, is_link, make_link
 

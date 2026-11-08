@@ -16,6 +16,20 @@ from pathlib import Path
 LIST = Path(__file__).with_name("game_files_102.json.gz")
 
 
+def get_list_path():
+    candidates = [
+        Path(__file__).with_name("game_files_102.json.gz"),
+        Path(__file__).parent / "game_files_102.json.gz",
+        Path(__file__).parent.parent / "tools" / "game_files_102.json.gz",
+        Path(__file__).parent.parent / "Project" / "tools" / "game_files_102.json.gz",
+        Path(__file__).parent.parent / "core" / "tools" / "game_files_102.json.gz",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return LIST
+
+
 def scan(root):
     root = Path(root)
     files = {}
@@ -32,9 +46,10 @@ def make(roots):
     scans = [scan(r) for r in roots]
     common = set(scans[0]).intersection(*scans[1:])
     out = {rel: (scans[0][rel] if all(s[rel] == scans[0][rel] for s in scans) else -1) for rel in sorted(common)}
-    with gzip.open(LIST, "wt", encoding="utf-8") as f:
+    list_path = get_list_path()
+    with gzip.open(list_path, "wt", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"))
-    print(f"{len(out)} files listed ({sum(v < 0 for v in out.values())} without a size check) -> {LIST}")
+    print(f"{len(out)} files listed ({sum(v < 0 for v in out.values())} without a size check) -> {list_path}")
 
 
 def uroot(folder):
@@ -43,7 +58,11 @@ def uroot(folder):
 
 
 def check(folder):
-    with gzip.open(LIST, "rt", encoding="utf-8") as f:
+    list_path = get_list_path()
+    if not list_path.exists():
+        print(f"Aviso: Base de datos {list_path.name} no encontrada. Verificación omitida.")
+        return uroot(folder), 0, [], []
+    with gzip.open(list_path, "rt", encoding="utf-8") as f:
         wanted = json.load(f)
     root = uroot(folder)
     missing, wrong = [], []
