@@ -3737,7 +3737,6 @@ class Launcher:
 
         # Automatic detection from known user paths, logs, and sibling locations
         candidates = [
-            Path("D:/D'Arby/Uncharted Game/CUSA02344"),
             DEFAULT_GAME_DIR,
             ROOT / "game" / "CUSA02344",
             ROOT.parent / "game" / "CUSA02344",
@@ -3754,13 +3753,6 @@ class Launcher:
             except Exception:
                 pass
 
-        for drive in ("D:", "E:", "C:"):
-            try:
-                d_p = Path(f"{drive}/D'Arby/Uncharted Game/CUSA02344")
-                if d_p not in candidates:
-                    candidates.append(d_p)
-            except Exception:
-                pass
 
         for cand in candidates:
             try:

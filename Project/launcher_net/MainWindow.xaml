@@ -591,7 +591,7 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="130"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TxtGameDir" Grid.Column="0" Text="D:\D'Arby\Uncharted Game\CUSA02344" Background="#161920" Foreground="#E5C158" BorderBrush="#554420" Padding="8,6" TextChanged="OnGameDirChanged"/>
+                                    <TextBox x:Name="TxtGameDir" Grid.Column="0" Text="" Background="#161920" Foreground="#E5C158" BorderBrush="#554420" Padding="8,6" TextChanged="OnGameDirChanged"/>
                                     <Button x:Name="BtnBrowse" Grid.Column="1" Content="BUSCAR..." Margin="8,0,0,0" Style="{StaticResource PresetButtonStyle}" Click="OnBrowseGameDir"/>
                                 </Grid>
 

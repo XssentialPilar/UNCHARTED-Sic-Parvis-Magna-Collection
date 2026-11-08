@@ -1496,7 +1496,23 @@ public partial class MainWindow : Window
 
         SaveUIToConfig();
 
+        if (string.IsNullOrWhiteSpace(_config.GameDir) || !Directory.Exists(_config.GameDir) ||
+            (!File.Exists(Path.Combine(_config.GameDir, "eboot.bin")) &&
+             !File.Exists(Path.Combine(_config.GameDir, "uroot", "eboot.bin")) &&
+             !File.Exists(Path.Combine(_config.GameDir, "big2-ps4_Shipping.elf")) &&
+             !File.Exists(Path.Combine(_config.GameDir, "big3-ps4_Shipping.elf"))))
+        {
+            MessageBox.Show(
+                LocalizationManager.Get("GameDirNotConfigured",
+                "Por favor, selecciona la carpeta donde tienes los archivos del juego (ej. CUSA02344 con eboot.bin).\n\nPuedes seleccionarla con el botón 'BUSCAR...' en la pestaña CONTROLES Y JUEGO."),
+                LocalizationManager.Get("SelectGameDirTitle", "Seleccionar carpeta del juego"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
 
+            OnNavInput(this, new RoutedEventArgs());
+            OnBrowseGameDir(this, new RoutedEventArgs());
+            return;
+        }
 
         BtnPlay.IsEnabled = false;
 

@@ -21,7 +21,7 @@ public class ActionBinding
 public class LauncherConfig
 {
     public string Language { get; set; } = "auto";
-    public string GameDir { get; set; } = @"D:\D'Arby\Uncharted Game\CUSA02344";
+    public string GameDir { get; set; } = "";
     public string SelectedGame { get; set; } = "u1";
     public string GraphicsApi { get; set; } = "dx9"; // dx11, dx12, vulkan, dx9
     public string VramBudgetMb { get; set; } = "0"; // 820, 1720, 3200, 6144, 0
