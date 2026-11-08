@@ -2063,6 +2063,25 @@ public partial class MainWindow : Window
 
 
     // --- GitHub Auto-Updater ---
+    public const string CurrentLauncherVersion = "v0.5.1";
+
+    private static bool IsNewerVersion(string latest, string current)
+    {
+        try
+        {
+            var lStr = latest.Trim().TrimStart('v', 'V').Split('-')[0];
+            var cStr = current.Trim().TrimStart('v', 'V').Split('-')[0];
+            if (Version.TryParse(lStr, out var l) && Version.TryParse(cStr, out var c))
+            {
+                return l > c;
+            }
+            return !string.Equals(latest.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private async void CheckForUpdatesAsync()
 
@@ -2100,7 +2119,7 @@ public partial class MainWindow : Window
 
                     string htmlUrl = doc.RootElement.TryGetProperty("html_url", out var urlElem) ? urlElem.GetString() ?? "" : "";
 
-                    if (!string.IsNullOrEmpty(latestTag))
+                    if (!string.IsNullOrEmpty(latestTag) && IsNewerVersion(latestTag, CurrentLauncherVersion))
 
                     {
 
