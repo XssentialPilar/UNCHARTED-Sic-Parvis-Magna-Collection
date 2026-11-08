@@ -17,7 +17,23 @@ Skip Decide(const Input& in) {
 }
 
 int GeneratedFrames(int mode) {
-    return mode == FgFsr ? 1 : 0;
+    switch (mode) {
+    case FgFsr:
+    case FgDlss2X:
+        return 1; // 2X presentation (1 generated + 1 real)
+    case FgDlss3X:
+        return 2; // 3X presentation (2 generated + 1 real)
+    case FgDlss4X:
+        return 3; // 4X presentation (3 generated + 1 real)
+    case FgDlss5X:
+        return 4; // 5X presentation (4 generated + 1 real)
+    case FgDlss6X:
+        return 5; // 6X presentation (5 generated + 1 real)
+    case FgDynamic:
+        return 1; // baseline dynamic 2X
+    default:
+        return 0; // Off or invalid
+    }
 }
 
 Pacing::Clock::time_point Pacing::RealDeadline(Clock::time_point ready) {
@@ -35,6 +51,27 @@ Pacing::Clock::time_point Pacing::RealDeadline(Clock::time_point ready) {
     }
     previous = ready;
     return ready + interval / 2;
+}
+
+Pacing::Clock::time_point Pacing::MultiFrameDeadline(Clock::time_point ready, int frameIndex, int totalGenerated) {
+    if (totalGenerated <= 1) {
+        return RealDeadline(ready);
+    }
+    if (ready > previous) {
+        if (!has_previous || ready - previous > std::chrono::milliseconds(250)) {
+            interval = Clock::duration::zero();
+            has_previous = true;
+        } else {
+            const auto sample = ready - previous;
+            if (interval == Clock::duration::zero() || sample < interval) {
+                interval = sample;
+            } else {
+                interval += (sample - interval) / 10;
+            }
+        }
+        previous = ready;
+    }
+    return ready + (interval * frameIndex) / (totalGenerated + 1);
 }
 
 } // namespace Vulkan::FrameGenerationPolicy

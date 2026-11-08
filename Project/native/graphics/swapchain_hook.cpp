@@ -201,10 +201,17 @@ HRESULT ExecuteDeterministic7StepPresent(
     // Step 2: Query DXGI VRAM telemetry and execute LRU Mip 0 eviction if UsageRatio >= 0.88
     trace.executedSteps[trace.stepCount++] = DeterministicPresentStep::Step2_PollVramAndEnforceLru;
     trace.vramTelemetry = vramMgr.PollAndEnforceBudget(nullptr, frameIndex);
+    if (swapchainHook.GetStreamingBudgetHook() != nullptr) {
+        const std::size_t budgetMb = static_cast<std::size_t>(vramMgr.GetHardCapBytes() / (1024ULL * 1024ULL));
+        swapchainHook.GetStreamingBudgetHook()(budgetMb);
+    }
 
     // Step 3: Process at most 2.5 MB from the lock-free async texture upload queue
     trace.executedSteps[trace.stepCount++] =
         DeterministicPresentStep::Step3_ProcessTimeSlicedUploadQueue;
+    if (swapchainHook.GetStreamingTimeSliceHook() != nullptr) {
+        swapchainHook.GetStreamingTimeSliceHook()(vramMgr.GetMaxUploadPerFrame());
+    }
     std::size_t sliceBytes = 0U;
     while (!pendingTextureUploadQueue.IsEmpty()) {
         if (!pendingTextureUploadQueue.TryPop(sliceBytes)) {

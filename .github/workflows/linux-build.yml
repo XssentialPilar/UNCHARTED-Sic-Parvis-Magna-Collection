@@ -1,0 +1,73 @@
+name: Native Linux CI Build & Test (No WSL)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test-linux:
+    name: Native Linux x64 Build & Validation
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libvulkan-dev \
+            vulkan-tools \
+            xvfb \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libwayland-dev \
+            binutils
+
+      - name: Configure CMake for Native Linux
+        run: |
+          cmake -B build-linux -S Project/spm_core -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=20
+
+      - name: Build libSPMCore.so and Test Suites
+        run: |
+          ninja -C build-linux
+
+      - name: Inspect Linux Shared Library ABI & Dependencies
+        run: |
+          echo "=== readelf -d libSPMCore.so ==="
+          readelf -d build-linux/libSPMCore.so
+          echo "=== ldd libSPMCore.so ==="
+          ldd build-linux/libSPMCore.so
+
+      - name: Execute Automated Unit & Compatibility Tests (Headless)
+        run: |
+          xvfb-run --auto-servernum ctest --test-dir build-linux --output-on-failure -V
+
+      - name: Prepare Linux Distribution Package
+        run: |
+          mkdir -p dist-linux/lib
+          cp build-linux/libSPMCore.so dist-linux/lib/
+          cp -r Project/spm_core/include dist-linux/
+          cp VERSION dist-linux/
+          tar -czvf Uncharted-SPMCore-v0.5.2-linux-x64.tar.gz -C dist-linux .
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Uncharted-SPMCore-v0.5.2-linux-x64
+          path: Uncharted-SPMCore-v0.5.2-linux-x64.tar.gz
+          retention-days: 14

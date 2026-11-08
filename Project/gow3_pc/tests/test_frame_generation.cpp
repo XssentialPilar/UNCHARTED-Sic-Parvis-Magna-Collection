@@ -41,11 +41,18 @@ int main() {
     in.reset = true;
     assert(Decide(in) == Skip::Failed);
 
-    // Providers generate exactly one frame per real frame (2x).
+    // Multipliers for FSR 2X, DLSS 2X to 6X and Dynamic
     assert(GeneratedFrames(FgFsr) == 1);
-    assert(GeneratedFrames(2) == 0);
+    assert(GeneratedFrames(FgDlss2X) == 1);
+    assert(GeneratedFrames(FgDlss3X) == 2);
+    assert(GeneratedFrames(FgDlss4X) == 3);
+    assert(GeneratedFrames(FgDlss5X) == 4);
+    assert(GeneratedFrames(FgDlss6X) == 5);
+    assert(GeneratedFrames(FgDynamic) == 1);
     assert(GeneratedFrames(FgOff) == 0);
     assert(GeneratedFrames(-1) == 0);
+    assert(GeneratedFrames(99) == 0);
+
     using namespace std::chrono;
     using Clock = Pacing::Clock;
     // Complete real-frame cycles, including rates whose half-cycle is below 4 ms.
@@ -60,6 +67,12 @@ int main() {
             assert(deadline == ready + period / 2);
             // A generated present taking longer than half a cycle leaves no future wait.
             assert(deadline < ready + period * 3 / 4);
+
+            // Test 3X multi-frame deadline (2 generated frames)
+            const auto m1 = pacing.MultiFrameDeadline(ready, 1, 2);
+            const auto m2 = pacing.MultiFrameDeadline(ready, 2, 2);
+            assert(m1 == ready + period / 3);
+            assert(m2 == ready + (period * 2) / 3);
         }
     }
     Pacing pacing;

@@ -4597,6 +4597,20 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             std::printf("Upscaler: scene texture LOD bias %.2f\n", sampler_lod_bias);
         }
     }
+    // SPM Texture Quality & VRAM Budget LOD bias enforcement
+    const auto& spm_settings = Gow3Settings::Get();
+    if (const char* env_bias = std::getenv("GOW3_MIP_LOD_BIAS"); env_bias && env_bias[0]) {
+        sampler_lod_bias += std::strtof(env_bias, nullptr);
+    } else {
+        const int tq = spm_settings.texture_quality.load(std::memory_order_relaxed);
+        if (tq == 0) { // Low texture quality: drop 1 mip level to save 75% VRAM
+            sampler_lod_bias += 0.75f;
+        } else if (tq == 2) { // High texture quality
+            sampler_lod_bias -= 0.25f;
+        } else if (tq == 3) { // Ultra texture quality
+            sampler_lod_bias -= 0.50f;
+        }
+    }
 
     bool uses_dma = false;
     const Shader::Info* dma_stage = nullptr;
