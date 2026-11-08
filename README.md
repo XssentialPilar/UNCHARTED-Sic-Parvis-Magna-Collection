@@ -33,7 +33,7 @@ Already have the required runtime? The [standalone launcher](https://github.com/
 | :--- | :--- |
 | **Explorer's Desk** | One place to manage your game directory, graphics, resolution, display mode, language, and update checks. |
 | **Keyboard and mouse interface** | Crisp, vector-derived key prompts with dimensions appropriate to each key, including larger keys such as Tab and Backspace. |
-| **Flexible displays** | Adaptations for 4:3, 16:9, 16:10, and 21:9, designed to use available screen space without stretching **(EXPERIMENTAL)**characters or interface elements. |
+| **Flexible displays** | Adaptations for 4:3, 16:9, 16:10, and 21:9, designed to use available screen space without stretching (EXPERIMENTAL) characters or interface elements. |
 | **Display modes** | Fullscreen, Borderless Window, and Windowed operation. |
 | **Scalable graphics** | Shadow and texture settings intended to affect real rendering workloads, giving players a useful quality/performance choice. |
 | **Performance-minded runtime** | Work on frame pacing, memory residency, streaming, and rendering efficiency to improve consistency—not merely momentary peak FPS. |
