@@ -935,9 +935,12 @@ def game_executable():
     """The runtime as Uncharted.exe (Task Manager, Windows' graphics settings and overlays show
     this name), copied from the build output whenever that is newer."""
     candidates = [
+        ROOT / "Uncharted.exe",
+        ROOT / "gow3-probe.exe",
+        ROOT / "gow3_pc/out/Uncharted.exe",
+        ROOT / "gow3_pc/out/gow3-probe.exe",
         ROOT.parent / "Build/Windows/gow3-probe.exe",
         ROOT / "../Build/Windows/gow3-probe.exe",
-        ROOT / "gow3_pc/out/gow3-probe.exe",
     ]
     built = None
     for cand in candidates:
