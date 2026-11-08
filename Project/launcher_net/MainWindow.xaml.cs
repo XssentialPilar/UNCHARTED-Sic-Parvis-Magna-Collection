@@ -1027,7 +1027,7 @@ public partial class MainWindow : Window
             client.DefaultRequestHeaders.UserAgent.ParseAdd("UnchartedLauncher/1.0");
             client.Timeout = TimeSpan.FromSeconds(3);
 
-            string url = "https://api.github.com/repos/DiegoPorro/Uncharted-TNDC/releases/latest";
+            string url = "https://api.github.com/repos/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases/latest";
             var response = await client.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
@@ -1058,7 +1058,7 @@ public partial class MainWindow : Window
 
     private void OnUpdateNowClicked(object sender, RoutedEventArgs e)
     {
-        string url = BorderUpdateBanner.Tag as string ?? "https://github.com/DiegoPorro/Uncharted-TNDC/releases";
+        string url = BorderUpdateBanner.Tag as string ?? "https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases";
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
