@@ -2,7 +2,7 @@
 
 > **Sic Parvis Magna** — *Greatness from small beginnings.*
 
-[![Release](https://img.shields.io/badge/Release-v0.5.0_Beta-C69D60?style=flat-square)](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases/tag/v0.5.0-beta)
+[![Downloads](https://img.shields.io/badge/Downloads-GitHub_Releases-C69D60?style=flat-square)](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases)
 ![Platform](https://img.shields.io/badge/Platform-Windows-3474A6?style=flat-square)
 ![Development](https://img.shields.io/badge/Status-Active_Development-455E56?style=flat-square)
 ![Technology](https://img.shields.io/badge/Technology-C%2B%2B20%20%2F%20C%2B%2B23-00599C?style=flat-square)
@@ -13,15 +13,20 @@ UNCHARTED: Sic Parvis Magna Collection brings together a dedicated launcher, key
 
 This is an **unofficial community project**, not an official PC release. **Original game files are not included.**
 
-## Get Started
+## Download and Get Started
 
-The complete package contains the **Explorer's Desk launcher**, native runtime components, keyboard and mouse prompt resources, and the supporting files distributed with this release.
+**[View Downloads and Release Notes](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases)**
 
-1. Download and extract the complete ZIP to a folder of your choice.
-2. Open `Uncharted - Sic Parvis Magna Collection.exe`.
-3. Choose your compatible, legally obtained game directory, configure your preferences, and launch.
+For new users, the **complete package** is the recommended download. It includes the **Explorer's Desk launcher**, native runtime components, keyboard and mouse prompt resources, and the supporting files needed by the package.
 
-Already have the required runtime? The [standalone launcher](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases/download/v0.5.0-beta/Uncharted-Sic-Parvis-Magna-Launcher.exe) is also available (approximately 65 MB). **It is not a complete first-time installation.**
+1. Download the latest complete ZIP package from the **Releases** page.
+2. Extract all files to a folder of your choice.
+3. Open `Uncharted - Sic Parvis Magna Collection.exe`.
+4. Select your compatible, legally obtained game directory, choose your preferences, and launch.
+
+A **standalone launcher** may also be available for users who already have the required runtime installed. A launcher-only download is **not** a complete first-time installation.
+
+Download sizes, update-specific changes, and installation notices are maintained on the relevant Release pages, keeping this README useful over time.
 
 ## Designed Around the Player
 
@@ -29,11 +34,11 @@ Already have the required runtime? The [standalone launcher](https://github.com/
 | :--- | :--- |
 | **Explorer's Desk** | One place to manage your game directory, graphics, resolution, display mode, language, and update checks. |
 | **Keyboard and mouse interface** | Crisp, vector-derived key prompts with dimensions appropriate to each key, including larger keys such as Tab and Backspace. |
-| **Flexible displays** | Adaptations for 4:3, 16:9, 16:10, and 21:9, designed to use available screen space without stretching (EXPERIMENTAL) characters or interface elements. |
+| **Flexible displays** | Experimental adaptations for 4:3, 16:9, 16:10, and 21:9, aiming to make use of available screen space while preserving correct proportions. |
 | **Display modes** | Fullscreen, Borderless Window, and Windowed operation. |
 | **Scalable graphics** | Shadow and texture settings intended to affect real rendering workloads, giving players a useful quality/performance choice. |
 | **Performance-minded runtime** | Work on frame pacing, memory residency, streaming, and rendering efficiency to improve consistency—not merely momentary peak FPS. |
-| **Continued development** | Public Beta feedback and launcher update checks help guide future improvements. |
+| **Continued development** | Community feedback and launcher update checks help guide future improvements. |
 
 ### A Small Beginning, a Meaningful Result
 
@@ -51,7 +56,7 @@ We believe performance improvements should be judged by **how steadily the game 
 
 ## Hardware Reference Profiles
 
-These preserve the project's **original minimum and recommended engineering profiles**. They are **development and testing targets**, not a certified compatibility list. The new 512 MB integrated-graphics observation is an *experimental result below the reference minimum*; it does not replace the baseline.
+These preserve the project's **original minimum and recommended engineering profiles**. They are **development and testing targets**, not a certified compatibility list. The 512 MB integrated-graphics observation is an *experimental result below the reference minimum*; it does not replace the baseline.
 
 | Component | Minimum reference — 720p / 30 FPS target | Recommended reference — 1080p / 60 FPS target |
 | :--- | :--- | :--- |
@@ -67,8 +72,8 @@ These preserve the project's **original minimum and recommended engineering prof
 
 **Important compatibility details**
 
-- The **current launcher is intended for modern 64-bit Windows**. Windows 7 SP1 and Windows 8.1 were historical research targets, **not verified supported systems for this Beta**.
-- The listed CPU and GPU families describe **performance research classes**, not machines on which the release has necessarily been tested.
+- The **launcher targets modern 64-bit Windows**. Windows 7 SP1 and Windows 8.1 were historical research targets and are **not part of the stated compatibility baseline**.
+- The listed CPU and GPU families describe **performance research classes**, not individually certified compatible systems.
 - A GPU's advertised DirectX support does not guarantee the required DXGI interfaces or Vulkan features. In particular, **Vulkan 1.3 should not be assumed available on older GPUs**.
 - The **820 MiB / 1,720 MiB limits** describe engine-managed budget targets. They do not cap every allocation made by the game, operating system, or graphics driver.
 - A 30 or 60 FPS goal is **not a promise of a locked frame rate**. Results depend on the scene, game build, driver, available RAM/VRAM, and graphics settings.
@@ -108,11 +113,11 @@ powershell -ExecutionPolicy Bypass -File .\Project\tools\Build.ps1 -Config Relea
 powershell -ExecutionPolicy Bypass -File .\Project\tools\Package.ps1
 ```
 
-Build requirements and available targets depend on the checked-out revision.
+Build prerequisites and available targets depend on the source tree and development environment.
 
-## Current Status and Feedback
+## Development and Feedback
 
-**v0.5.0 Beta is an early public release.** Features and compatibility may differ across game builds, graphics APIs, drivers, and hardware. Visual artifacts, incomplete prompt replacements, or uneven performance may still occur.
+**The project is under active development.** Features and compatibility may differ across game builds, graphics APIs, drivers, and hardware. Display adaptation remains experimental in some situations, and visual artifacts, incomplete prompt replacements, or uneven performance may still occur.
 
 If something does not work as expected, please [open an issue](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/issues) with your game/build, system specifications, graphics settings, reproduction steps, and—where available—logs, screenshots, or frame-time data.
 
