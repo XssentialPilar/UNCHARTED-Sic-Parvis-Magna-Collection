@@ -15,10 +15,6 @@ This is an **unofficial community project**, not an official PC release. **Origi
 
 ## Get Started
 
-### [Download the Complete v0.5.0 Beta Package](https://github.com/XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection/releases/download/v0.5.0-beta/UNCHARTED-Sic-Parvis-Magna-Collection-v0.5.0-Beta.zip)
-
-**Recommended for new users · ZIP · Approximately 194 MB**
-
 The complete package contains the **Explorer's Desk launcher**, native runtime components, keyboard and mouse prompt resources, and the supporting files distributed with this release.
 
 1. Download and extract the complete ZIP to a folder of your choice.
