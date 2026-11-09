@@ -41,7 +41,7 @@ Download sizes, supported packages, fixes, and platform-specific instructions be
 
 ## Windows and Linux Compatibility
 
-**Windows 7 SP1, Windows 8, and Windows 8.1 are included in the project's native compatibility work**, alongside Windows 10 and Windows 11. Dedicated launcher builds and shared-library components are being developed for both **32-bit (x86)** and **64-bit (x64)** Windows where applicable.
+**Windows 7 SP1, Windows 8, and Windows 8.1 are included in the project's native compatibility work in some versions**, alongside Windows 10 and Windows 11. Dedicated launcher builds and shared-library components are being developed for both **32-bit (x86)** and **64-bit (x64)** Windows where applicable.
 
 It is important to distinguish **launcher compatibility** from **playable game-runtime compatibility**:
 
