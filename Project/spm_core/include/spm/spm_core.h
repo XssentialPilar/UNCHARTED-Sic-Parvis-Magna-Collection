@@ -6,6 +6,7 @@
 #include "spm_types.h"
 #include "spm_hardware_caps.h"
 #include "spm_neural_assist.h"
+#include "spm_scheduler.h"
 
 #ifdef _WIN32
   #ifdef SPM_CORE_EXPORTS

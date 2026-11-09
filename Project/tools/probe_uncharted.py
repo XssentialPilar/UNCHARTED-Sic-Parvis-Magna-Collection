@@ -1746,11 +1746,6 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     anti_aliasing = os.environ.get("GOW3_ANTI_ALIASING") or ini_value(settings_file, "anti_aliasing", "off")
     if anti_aliasing:
         env["GOW3_ANTI_ALIASING"] = anti_aliasing.lower()
-        if anti_aliasing.lower() == "dlaa":
-            env["GOW3_UPSCALER"] = "dlss"
-        elif anti_aliasing.lower() in ("off", "none", "0"):
-            env["GOW3_UPSCALER"] = "off"
-            env["UNCHARTED_TEMPORAL_AA"] = "0"
 
     frame_gen = os.environ.get("GOW3_FRAME_GENERATION") or ini_value(settings_file, "frame_generation", "off")
     if frame_gen:
@@ -2084,8 +2079,9 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     # Uncharted 2 used 15.5 GB of RAM with them and 7.0 GB without, and loaded its pipelines in
     # 40 s instead of 9.6 s (the graphics driver's own shader cache does the job, faster).
     # GOW3_PIPELINE_BINARIES=1 (test-env.txt) turns them back on.
-    env.setdefault("GOW3_PIPELINE_BINARIES", "1")
-    # Preserve persistent pipeline cache across runs for instant loading
+    env.setdefault("GOW3_PIPELINE_BINARIES", "0")
+    if env["GOW3_PIPELINE_BINARIES"] == "0":
+        remove_pipeline_binaries(Path(env["GOW3_GPU_USER_DIR"]) / "cache")
     env["GOW3_TOGGLE_FILE"] = str(user / "disabled-optimizations.txt")
     env["GOW3_LOADEXEC_FILE"] = str(loadexec)
     if args.capture:

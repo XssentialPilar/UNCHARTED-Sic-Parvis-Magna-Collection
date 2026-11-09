@@ -267,7 +267,7 @@ bool Swapchain::AcquireNextImage() {
 static FrameGenerationPolicy::Pacing s_fg_pacing;
 
 bool Swapchain::Present() {
-    const auto& settings = Gow3Settings::Get();
+    auto& settings = Gow3Settings::Get();
     int fps_cap = Gow3Graphics::PresentLimit(settings.fps_limit.load(std::memory_order_relaxed));
     const auto pacer_mode = static_cast<Gow3Dxgi::PacerMode>(
         std::clamp(settings.frame_pacer_mode.load(std::memory_order_relaxed), 0, 3));

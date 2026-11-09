@@ -437,8 +437,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     if (std::filesystem::exists(cache_path)) {
         std::ifstream file(cache_path, std::ios::binary | std::ios::ate);
         if (file) {
-            const auto size = file.tellg();
-            if (size > 32) {
+            const auto stream_size = file.tellg();
+            if (stream_size > 32) {
+                const auto size = static_cast<std::size_t>(stream_size);
                 initial_cache_data.resize(size);
                 file.seekg(0);
                 file.read(initial_cache_data.data(), size);
@@ -459,7 +460,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         std::filesystem::remove(cache_path, ec);
         cache_ci.initialDataSize = 0;
         cache_ci.pInitialData = nullptr;
-        std::tie(cache_result, cache) = instance.GetDevice().createPipelineCacheUnique(cache_ci);
+        auto fallback_cache = instance.GetDevice().createPipelineCacheUnique(cache_ci);
+        cache_result = fallback_cache.result;
+        cache = std::move(fallback_cache.value);
     }
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
@@ -491,20 +494,16 @@ PipelineCache::~PipelineCache() {
     StopWarmUp();
     FinishCompilations();
     if (pipeline_cache) {
-        try {
-            const auto data = instance.GetDevice().getPipelineCacheData(*pipeline_cache);
-            if (!data.empty()) {
-                const std::filesystem::path cache_path = GetSpmPipelineCachePath();
-                std::error_code ec;
-                std::filesystem::create_directories(cache_path.parent_path(), ec);
-                std::ofstream file(cache_path, std::ios::binary | std::ios::trunc);
-                if (file) {
-                    file.write(reinterpret_cast<const char*>(data.data()), data.size());
-                    LOG_INFO(Render_Vulkan, "SPM: Persistently saved {} bytes to pipeline cache: {}", data.size(), cache_path.string());
-                }
+        auto [data_result, data] = instance.GetDevice().getPipelineCacheData(*pipeline_cache);
+        if (data_result == vk::Result::eSuccess && !data.empty()) {
+            const std::filesystem::path cache_path = GetSpmPipelineCachePath();
+            std::error_code ec;
+            std::filesystem::create_directories(cache_path.parent_path(), ec);
+            std::ofstream file(cache_path, std::ios::binary | std::ios::trunc);
+            if (file) {
+                file.write(reinterpret_cast<const char*>(data.data()), data.size());
+                LOG_INFO(Render_Vulkan, "SPM: Persistently saved {} bytes to pipeline cache: {}", data.size(), cache_path.string());
             }
-        } catch (const std::exception& e) {
-            LOG_ERROR(Render_Vulkan, "SPM: Failed to save pipeline cache: {}", e.what());
         }
     }
 }

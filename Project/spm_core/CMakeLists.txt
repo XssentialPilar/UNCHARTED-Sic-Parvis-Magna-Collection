@@ -22,6 +22,7 @@ set(SPM_CORE_SOURCES
     src/spm_launcher_bridge.cpp
     src/spm_hardware_caps.cpp
     src/spm_neural_assist.cpp
+    src/spm_scheduler.cpp
 )
 
 add_library(SPMCore SHARED ${SPM_CORE_SOURCES})
@@ -77,3 +78,4 @@ add_spm_test(test_spm_streaming test_streaming.cpp)
 add_spm_test(test_spm_hardware_caps test_hardware_caps.cpp)
 add_spm_test(test_spm_neural_assist test_neural_assist.cpp)
 add_spm_test(benchmark_neural_modes benchmark_neural_modes.cpp)
+add_spm_test(test_spm_scheduler test_scheduler.cpp)
