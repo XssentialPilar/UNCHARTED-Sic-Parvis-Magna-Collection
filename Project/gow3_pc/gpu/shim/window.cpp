@@ -172,7 +172,7 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
         Gow3Settings::Get().display_mode = Gow3Graphics::Borderless;
     }
     ApplyDisplayMode(Gow3Settings::Get().display_mode);
-    // gow3: the game has no mouse; the in-game menu draws its own cursor (Gow3Overlay::SetOpen).
+    // gow3: the game has no mouse; the in-game overlay draws its own cursor in the swapchain.
     if (!Headless()) SDL_HideCursor();
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -309,24 +309,18 @@ bool WindowSDL::PollEvents() {
 #endif
     Gow3Mouse::Update(window, !text_active && !Gow3Overlay::CapturesInput() && !Background(),
                      mouse_foreground);
-    // gow3 29 Oct 2026 (GitHub #300: no mouse cursor in the in-game menu): the menu's own drawn
-    // cursor follows ImGui's last mouse position, which can be off screen after mouse look let
-    // the pointer go. Windows' cursor is shown while the menu or a dialog takes the input,
-    // placed in the middle of the window when it appears, and hidden again when the game has it.
+    // Keep the OS cursor hidden. The overlay renders a DPI-correct cursor into the game frame,
+    // avoiding a second cursor and keeping it visible across menu, choice, and text dialogs.
     if (!Headless()) {
-        static bool cursor_shown = false;
-        const bool want_cursor = Gow3Overlay::CapturesInput();
-        if (want_cursor != cursor_shown) {
-            cursor_shown = want_cursor;
-            if (want_cursor) {
-                int w = 0, h = 0;
-                SDL_GetWindowSize(window, &w, &h);
-                SDL_WarpMouseInWindow(window, w * 0.5f, h * 0.5f);
-                SDL_ShowCursor();
-            } else {
-                SDL_HideCursor();
-            }
+        static bool overlay_was_active = false;
+        const bool overlay_active = Gow3Overlay::CapturesInput();
+        if (overlay_active && !overlay_was_active) {
+            int w = 0, h = 0;
+            SDL_GetWindowSize(window, &w, &h);
+            SDL_WarpMouseInWindow(window, w * 0.5f, h * 0.5f);
         }
+        overlay_was_active = overlay_active;
+        SDL_HideCursor();
     }
     if (const int mode = Gow3Settings::Get().display_mode; mode != display_mode) {
         ApplyDisplayMode(mode);

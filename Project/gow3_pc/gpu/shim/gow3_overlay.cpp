@@ -213,8 +213,8 @@ void SetOpen(bool value) {
     if (menu_open.exchange(value) == value) {
         return;
     }
-    // gow3 29 Oct 2026 (#300): Windows' own cursor is shown while the menu is open (window.cpp),
-    // so the menu no longer draws one of its own (two cursors otherwise).
+    // The cursor is drawn into the same framebuffer as the menu so it remains aligned with the
+    // high-DPI UI and cannot be left behind when the OS cursor is hidden.
     ImGui::GetIO().MouseDrawCursor = false;
     CancelCapture();
     if (value) {
@@ -1914,6 +1914,7 @@ bool HandleEvent(const SDL_Event& event) {
     }
     ImGuiIO& io = ImGui::GetIO();
     const bool is_open = menu_open;
+    const bool overlay_active = is_open || text_entry_active || choice_active;
     switch (event.type) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
@@ -1994,7 +1995,7 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_MOUSE_MOTION: {
-        if (!is_open) {
+        if (!overlay_active) {
             return false;
         }
         const float density = PixelDensity(event.motion.windowID);
@@ -2003,7 +2004,7 @@ bool HandleEvent(const SDL_Event& event) {
     }
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP: {
-        if (!is_open) {
+        if (!overlay_active) {
             return false;
         }
         const int button = event.button.button == SDL_BUTTON_LEFT    ? 0
@@ -2016,7 +2017,7 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     case SDL_EVENT_MOUSE_WHEEL:
-        if (!is_open) {
+        if (!overlay_active) {
             return false;
         }
         io.AddMouseWheelEvent(event.wheel.x, event.wheel.y);
@@ -2064,6 +2065,50 @@ bool Visible() {
 
 bool CapturesInput() {
     return menu_open || text_entry_active || choice_active;
+}
+
+void DrawInGameCursor(vk::Extent2D extent) {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool active = menu_open || text_entry_active || choice_active;
+    if (!active || extent.width == 0 || extent.height == 0) {
+        return;
+    }
+
+    ImVec2 position = io.MousePos;
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        position.x < 0.0f || position.y < 0.0f ||
+        position.x > float(extent.width) || position.y > float(extent.height)) {
+        position = ImVec2(float(extent.width) * 0.5f, float(extent.height) * 0.5f);
+        io.AddMousePosEvent(position.x, position.y);
+    }
+
+    const float scale = std::clamp(float(extent.height) / 1080.0f, 0.75f, 2.0f);
+    const float size = 22.0f * scale;
+    const ImVec2 points[] = {
+        position,
+        ImVec2(position.x, position.y + size),
+        ImVec2(position.x + size * 0.34f, position.y + size * 0.70f),
+        ImVec2(position.x + size * 0.70f, position.y + size * 1.18f),
+        ImVec2(position.x + size * 0.89f, position.y + size * 1.04f),
+        ImVec2(position.x + size * 0.53f, position.y + size * 0.57f),
+        ImVec2(position.x + size * 0.96f, position.y + size * 0.53f),
+    };
+    const ImVec2 shadow_offset(2.0f * scale, 2.0f * scale);
+    ImVec2 shadow[std::size(points)];
+    for (size_t i = 0; i < std::size(points); ++i) {
+        shadow[i] = ImVec2(points[i].x + shadow_offset.x, points[i].y + shadow_offset.y);
+    }
+
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    draw->AddPolyline(shadow, int(std::size(shadow)), IM_COL32(0, 0, 0, 190), 3.0f * scale,
+                      ImDrawFlags_Closed);
+    draw->AddConvexPolyFilled(shadow, int(std::size(shadow)), IM_COL32(0, 0, 0, 115));
+    draw->AddConvexPolyFilled(points, int(std::size(points)), IM_COL32(244, 238, 220, 255));
+    draw->AddPolyline(points, int(std::size(points)), IM_COL32(30, 24, 18, 255), 2.0f * scale,
+                      ImDrawFlags_Closed);
+    draw->AddLine(ImVec2(position.x + size * 0.12f, position.y + size * 0.17f),
+                  ImVec2(position.x + size * 0.12f, position.y + size * 0.72f),
+                  IM_COL32(214, 166, 72, 255), 1.5f * scale);
 }
 
 void BeginChoice(const std::string& title, const std::vector<std::string>& items,
@@ -2271,6 +2316,7 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
         TrophyPopup();
     }
     trophy_showing = !trophy_popups.empty() || !trophy_retired.empty();
+    DrawInGameCursor(extent);
     ImGui::Render();
 
     const vk::RenderingAttachmentInfo attachment{
