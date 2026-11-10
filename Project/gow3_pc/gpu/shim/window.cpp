@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -105,6 +106,9 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         UNREACHABLE_MSG("Failed to initialize SDL video: {}", SDL_GetError());
+    }
+    if (!SDL_Vulkan_LoadLibrary(nullptr)) {
+        UNREACHABLE_MSG("Failed to load Vulkan through SDL: {}", SDL_GetError());
     }
     // Windowed: the requested size, made 16:9 and smaller than the desktop's usable area (a
     // 1920x1080 window on a 1920x1080 screen put its title bar off screen, over the taskbar).
