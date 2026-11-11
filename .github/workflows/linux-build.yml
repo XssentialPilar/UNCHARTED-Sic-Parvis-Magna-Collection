@@ -25,7 +25,7 @@ jobs:
           sparse-checkout: |
             VERSION
             Project/spm_core
-          sparse-checkout-cone: true
+          sparse-checkout-cone-mode: true
 
       - name: Install System Dependencies
         run: |

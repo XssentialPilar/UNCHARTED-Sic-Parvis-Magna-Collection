@@ -25,7 +25,7 @@ jobs:
           sparse-checkout: |
             *
             !Project/gow3_pc/gpu/third_party/fsr-vulkan/**
-          sparse-checkout-cone: false
+          sparse-checkout-cone-mode: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
