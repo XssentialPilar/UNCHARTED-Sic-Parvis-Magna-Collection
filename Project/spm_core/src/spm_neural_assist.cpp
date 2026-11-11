@@ -12,6 +12,9 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+using SpmModuleHandle = HMODULE;
+#else
+using SpmModuleHandle = void*;
 #endif
 
 // ============================================================================
@@ -119,7 +122,7 @@ public:
 // ============================================================================
 class SpmDirectMLBackend : public ISpmInferenceBackend {
 private:
-    HMODULE m_hDml = nullptr;
+    SpmModuleHandle m_hDml = nullptr;
     bool m_initialized = false;
     SpmCpuPredictor m_cpuFallback;
 
@@ -182,7 +185,7 @@ public:
 // ============================================================================
 class SpmOnnxRuntimeBackend : public ISpmInferenceBackend {
 private:
-    HMODULE m_hOrt = nullptr;
+    SpmModuleHandle m_hOrt = nullptr;
     bool m_initialized = false;
     SpmCpuPredictor m_cpuFallback;
 
