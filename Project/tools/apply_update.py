@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 DEFAULTS = ("analysis/uncharted-user/disabled-optimizations.txt",)
-KEEP = {"analysis", "update"}
+KEEP = {"analysis", "update", "user", "launcher.json"}
 # The files the installed package put there (relative, "/"), written after each update: the next
 # update leaves out the ones its package dropped and carries over everything else.
 MANIFEST = "installed-files.txt"

@@ -181,6 +181,45 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.menu_shortcut = value == "view_menu" ? 1 : value == "keyboard" ? 2 : value == "custom" ? 3 : 0;
         return;
     }
+    if (key == "neural_assist_mode") {
+        v.neural_assist_mode = (value == "enabled" || value == "1") ? 1 : (value == "disabled" || value == "2") ? 2 : 0;
+        return;
+    }
+    if (key == "storage_optimization") {
+        v.storage_optimization = (value == "nvme" || value == "1") ? 1 : (value == "ssd" || value == "2") ? 2 : (value == "hdd" || value == "3") ? 3 : 0;
+        return;
+    }
+    if (key == "anti_aliasing") {
+        v.anti_aliasing = (value == "fxaa" || value == "1") ? 1
+                        : (value == "smaa" || value == "2") ? 2
+                        : (value == "msaa2x" || value == "3") ? 3
+                        : (value == "msaa4x" || value == "4") ? 4
+                        : (value == "msaa8x" || value == "5") ? 5
+                        : (value == "dlaa" || value == "6") ? 6
+                        : 0;
+        return;
+    }
+    if (key == "frame_generation") {
+        v.frame_generation = (value == "fsr_fg" || value == "1") ? 1
+                           : (value == "dlss_2x" || value == "2") ? 2
+                           : (value == "dlss_3x" || value == "3") ? 3
+                           : (value == "dlss_4x" || value == "4") ? 4
+                           : (value == "dlss_5x" || value == "5") ? 5
+                           : (value == "dlss_6x" || value == "6") ? 6
+                           : (value == "dynamic" || value == "7") ? 7
+                           : 0;
+        return;
+    }
+    if (key == "reflex_mode") {
+        v.reflex_mode = (value == "on" || value == "1") ? 1
+                      : (value == "boost" || value == "2") ? 2
+                      : 0;
+        return;
+    }
+    if (key == "streaming_budget_mb") {
+        v.streaming_budget_mb = i >= 64 ? std::clamp(i, 64, 16384) : 512;
+        return;
+    }
     const char* cheat_keys[] = {"cheat_health", "cheat_magic", "cheat_item", "cheat_rage", "cheat_orbs",
                                 "cheat_very_hard", "cheat_double_jumps"};
     for (unsigned cheat = 0; cheat < GOW3_CHEAT_COUNT; ++cheat) {
@@ -360,6 +399,12 @@ void Load() {
         {"GOW3_SHADOW_QUALITY", "shadow_quality"},
         {"GOW3_DYNAMIC_SHADOWS", "dynamic_shadows"},
         {"GOW3_VIEW_DISTANCE", "view_distance"},
+        {"GOW3_ANTI_ALIASING", "anti_aliasing"},
+        {"GOW3_FRAME_GENERATION", "frame_generation"},
+        {"GOW3_REFLEX_MODE", "reflex_mode"},
+        {"GOW3_STREAMING_BUDGET_MB", "streaming_budget_mb"},
+        {"GOW3_NEURAL_ASSIST_MODE", "neural_assist_mode"},
+        {"GOW3_STORAGE_OPTIMIZATION", "storage_optimization"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -527,6 +572,16 @@ KeyValues Current() {
            shadow_qualities[std::clamp(v.shadow_quality.load(), 0, 3)],
            int(v.dynamic_shadows.load()),
            view_dist_names[std::clamp(v.view_distance_mode.load(), 0, 5)]);
+    static const char* const aa_names[] = {"off", "fxaa", "smaa", "msaa2x", "msaa4x", "msaa8x", "dlaa"};
+    static const char* const fg_names[] = {"off", "fsr_fg", "dlss_2x", "dlss_3x", "dlss_4x", "dlss_5x", "dlss_6x", "dynamic"};
+    static const char* const reflex_names[] = {"off", "on", "boost"};
+    Append(text, "anti_aliasing=%s\nframe_generation=%s\nreflex_mode=%s\nstreaming_budget_mb=%d\nneural_assist_mode=%d\nstorage_optimization=%d\n",
+           aa_names[std::clamp(v.anti_aliasing.load(), 0, 6)],
+           fg_names[std::clamp(v.frame_generation.load(), 0, 7)],
+           reflex_names[std::clamp(v.reflex_mode.load(), 0, 2)],
+           v.streaming_budget_mb.load(),
+           v.neural_assist_mode.load(),
+           v.storage_optimization.load());
     Append(text, "mouse=%d\nmouse_sens=%.2f\nmouse_invert=%d\nprompts=%s\nstick_speed=%.2f\n",
            int(v.mouse.load()), v.mouse_sens.load(), int(v.mouse_invert.load()), PromptsName(v.prompts),
            v.stick_speed.load());

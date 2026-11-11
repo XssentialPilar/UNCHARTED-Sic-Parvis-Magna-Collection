@@ -164,6 +164,18 @@ void TestSection8_ZeroAllocationsAcross10000Presents() {
     auto dx11 = CreateDx11Backend();
     assert(SUCCEEDED(dx11->Initialize(1280U, 720U, true)));
     SwapchainHook hook(dx11.get());
+    static std::size_t s_streamingTimeSliceCalls = 0;
+    static std::size_t s_streamingBudgetCalls = 0;
+    hook.SetStreamingHooks(
+        [](std::size_t maxUpload) {
+            (void)maxUpload;
+            ++s_streamingTimeSliceCalls;
+        },
+        [](std::size_t budgetMb) {
+            (void)budgetMb;
+            ++s_streamingBudgetCalls;
+        }
+    );
 
     // Push a 6 MB texture broken into three 2 MB chunks; each frame can upload at most 2.5 MB
     assert(uploadQueue.TryPush(2000000U));
@@ -189,6 +201,8 @@ void TestSection8_ZeroAllocationsAcross10000Presents() {
     }
 
     assert(frameArena.GetResetCount() == 10000U);
+    assert(s_streamingTimeSliceCalls == 10000ULL);
+    assert(s_streamingBudgetCalls == 10000ULL);
     assert(trace.stepCount == 7U);
     assert(trace.executedSteps[0] == DeterministicPresentStep::Step1_BeginFrameQpcTimer);
     assert(trace.executedSteps[1] == DeterministicPresentStep::Step2_PollVramAndEnforceLru);

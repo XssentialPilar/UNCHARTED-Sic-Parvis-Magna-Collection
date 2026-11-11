@@ -26,7 +26,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPOSITORY = "bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port"
+REPOSITORY = "XssentialPilar/UNCHARTED-Sic-Parvis-Magna-Collection"
 RELEASES_PAGE = f"https://github.com/{REPOSITORY}/releases"
 API = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=20"
 ASSET = "Uncharted-windows.zip"

@@ -19,6 +19,7 @@
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
+#include "video_core/renderer_vulkan/frame_generation_policy.h"
 #include "core/debug_state.h"
 #include "apds/apds.h"
 
@@ -263,12 +264,28 @@ bool Swapchain::AcquireNextImage() {
     return !needs_recreation;
 }
 
+static FrameGenerationPolicy::Pacing s_fg_pacing;
+
 bool Swapchain::Present() {
-    const auto& settings = Gow3Settings::Get();
-    const int fps_cap = Gow3Graphics::PresentLimit(settings.fps_limit.load(std::memory_order_relaxed));
+    auto& settings = Gow3Settings::Get();
+    int fps_cap = Gow3Graphics::PresentLimit(settings.fps_limit.load(std::memory_order_relaxed));
     const auto pacer_mode = static_cast<Gow3Dxgi::PacerMode>(
         std::clamp(settings.frame_pacer_mode.load(std::memory_order_relaxed), 0, 3));
     const double display_hz = Gow3DisplayRefreshRate();
+
+    const int fg_mode = settings.frame_generation.load(std::memory_order_relaxed);
+    const int reflex_mode = settings.reflex_mode.load(std::memory_order_relaxed);
+    const int generated_count = FrameGenerationPolicy::GeneratedFrames(fg_mode);
+
+    // Reflex Low Latency: force 1 frame queue depth and reduce queue latency
+    if (reflex_mode >= 1) {
+        settings.frames_queued.store(1, std::memory_order_relaxed);
+    }
+
+    // Frame Generation: interpolate presentation cadence when enabled
+    if (generated_count > 0 && fps_cap > 0) {
+        fps_cap = std::min(fps_cap * (generated_count + 1), 480);
+    }
 
     if (headless) {
         image_index = (image_index + 1) % image_count;

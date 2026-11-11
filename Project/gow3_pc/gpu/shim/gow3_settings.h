@@ -151,6 +151,12 @@ struct Values {
     std::atomic<int> shadow_quality{1};  // 0 = low, 1 = medium, 2 = high, 3 = ultra
     std::atomic<bool> dynamic_shadows{true}; // true = enabled, false = disabled
     std::atomic<int> view_distance_mode{2}; // 0 = very_low (50%), 1 = low (75%), 2 = med (100%), 3 = high (125%), 4 = ultra (150%), 5 = auto
+    std::atomic<int> neural_assist_mode{0}; // 0 = auto, 1 = enabled, 2 = disabled
+    std::atomic<int> storage_optimization{0}; // 0 = auto, 1 = nvme, 2 = ssd, 3 = hdd
+    std::atomic<int> anti_aliasing{0}; // 0 = off, 1 = fxaa, 2 = smaa, 3 = msaa2x, 4 = msaa4x, 5 = msaa8x, 6 = dlaa
+    std::atomic<int> frame_generation{0}; // 0 = off, 1 = fsr_fg, 2 = dlss_2x, 3 = dlss_3x, 4 = dlss_4x, 5 = dlss_5x, 6 = dlss_6x, 7 = dynamic
+    std::atomic<int> reflex_mode{0}; // 0 = off, 1 = on, 2 = boost
+    std::atomic<int> streaming_budget_mb{512}; // streaming budget cap in MB
 
     /// Startup settings for the explicit GOW3_RENDER_RES compatibility patch only.
     int startup_preset = NativeAA;

@@ -266,8 +266,12 @@ uintptr_t IOFile::GetFileMapping() {
     HANDLE mapping = nullptr;
 
     if (file_access_mode == FileAccessMode::ReadWrite) {
+#ifdef __MINGW32__
+        mapping = CreateFileMappingA(hfile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+#else
         mapping = CreateFileMapping2(hfile, NULL, FILE_MAP_WRITE, PAGE_READWRITE, SEC_COMMIT, 0,
                                      NULL, NULL, 0);
+#endif
     } else {
         mapping = hfile;
     }

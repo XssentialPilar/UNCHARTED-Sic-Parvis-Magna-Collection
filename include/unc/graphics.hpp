@@ -155,6 +155,19 @@ public:
     void SetDescriptorReader(DescriptorReaderFn reader);
     void SetOriginalPresent(OriginalPresentFn present_fn);
     void SetOverlayRenderer(OverlayRenderFn overlay_fn);
+    using StreamingTimeSliceFn = void (*)(std::size_t maxUploadBytes);
+    using StreamingBudgetEnforceFn = void (*)(std::size_t vramBudgetMb);
+
+    void SetStreamingHooks(StreamingTimeSliceFn timeSliceFn, StreamingBudgetEnforceFn budgetFn) noexcept {
+        streaming_time_slice_ = timeSliceFn;
+        streaming_budget_enforce_ = budgetFn;
+    }
+    [[nodiscard]] StreamingTimeSliceFn GetStreamingTimeSliceHook() const noexcept {
+        return streaming_time_slice_;
+    }
+    [[nodiscard]] StreamingBudgetEnforceFn GetStreamingBudgetHook() const noexcept {
+        return streaming_budget_enforce_;
+    }
 
     void MarkDirty(SwapchainDirtyFlags flags) noexcept;
     [[nodiscard]] SwapchainDirtyFlags PeekDirtyFlags() const noexcept;
@@ -184,6 +197,8 @@ private:
     DescriptorReaderFn descriptor_reader_{};
     OriginalPresentFn original_present_{};
     OverlayRenderFn overlay_renderer_{};
+    StreamingTimeSliceFn streaming_time_slice_{nullptr};
+    StreamingBudgetEnforceFn streaming_budget_enforce_{nullptr};
 };
 
 } // namespace unc::graphics

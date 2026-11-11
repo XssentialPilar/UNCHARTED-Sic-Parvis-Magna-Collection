@@ -1742,9 +1742,37 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
                 env["GOW3_POKE"] = ",".join(pokes)
         else:
             print("Cheats and unlocked rewards: need update 1.02 (not used)")
+    # SPM v0.6.1 Features Forwarding
+    anti_aliasing = os.environ.get("GOW3_ANTI_ALIASING") or ini_value(settings_file, "anti_aliasing", "off")
+    if anti_aliasing:
+        env["GOW3_ANTI_ALIASING"] = anti_aliasing.lower()
+
+    frame_gen = os.environ.get("GOW3_FRAME_GENERATION") or ini_value(settings_file, "frame_generation", "off")
+    if frame_gen:
+        env["GOW3_FRAME_GENERATION"] = frame_gen.lower()
+
+    reflex = os.environ.get("GOW3_REFLEX_MODE") or ini_value(settings_file, "reflex_mode", "off")
+    if reflex:
+        env["GOW3_REFLEX_MODE"] = reflex.lower()
+
+    streaming_budget = os.environ.get("GOW3_STREAMING_BUDGET_MB") or ini_value(settings_file, "streaming_budget_mb", "512")
+    if streaming_budget:
+        env["GOW3_STREAMING_BUDGET_MB"] = str(streaming_budget)
+
+    neural_mode = os.environ.get("GOW3_NEURAL_ASSIST_MODE") or ini_value(settings_file, "neural_assist_mode", "auto")
+    if neural_mode:
+        env["GOW3_NEURAL_ASSIST_MODE"] = neural_mode.lower()
+
+    storage_opt = os.environ.get("GOW3_STORAGE_OPTIMIZATION") or ini_value(settings_file, "storage_optimization", "auto")
+    if storage_opt:
+        env["GOW3_STORAGE_OPTIMIZATION"] = storage_opt.lower()
+
     print(
         f"Engine Architecture: API={api.upper()} | VRAMCap={vram_budget_mb or 'Auto'}MB | "
-        f"Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}"
+        f"Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}\n"
+        f"SPM Pipeline: AA={env.get('GOW3_ANTI_ALIASING', 'off')} | FG={env.get('GOW3_FRAME_GENERATION', 'off')} | "
+        f"Reflex={env.get('GOW3_REFLEX_MODE', 'off')} | Streaming={env.get('GOW3_STREAMING_BUDGET_MB', '512')}MB | "
+        f"Neural={env.get('GOW3_NEURAL_ASSIST_MODE', 'auto')} | Storage={env.get('GOW3_STORAGE_OPTIMIZATION', 'auto')}"
     )
     # Texture filtering (launcher -> Advanced -> Texture filtering): sampler.cpp GOW3_ANISOTROPY raises
     # mipmapped colour textures to at least that ratio (~0% FPS measured in Uncharted 2).

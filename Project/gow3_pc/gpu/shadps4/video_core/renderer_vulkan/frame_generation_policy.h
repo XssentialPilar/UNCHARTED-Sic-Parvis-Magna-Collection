@@ -1,14 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Adapted from SpartanPort 3.0.0: when frame generation adds a frame. No Vulkan: unit tested
-// (tests/test_frame_generation.cpp).
+// Frame Generation & Multi-Frame Generation (MFG) Policy
 #pragma once
 
 #include <chrono>
 
 namespace Vulkan::FrameGenerationPolicy {
 
-/// Frame generation mode: off, fsr.
-enum Mode : int { FgOff = 0, FgFsr = 1 };
+/// Frame generation modes: off, FSR 2X, DLSS 2X to 6X, dynamic MFG.
+enum Mode : int {
+    FgOff = 0,
+    FgFsr = 1,
+    FgDlss2X = 2,
+    FgDlss3X = 3,
+    FgDlss4X = 4,
+    FgDlss5X = 5,
+    FgDlss6X = 6,
+    FgDynamic = 7
+};
 
 enum class Skip { None, Off, NoUpscale, Reset, FullScreenPass, Failed };
 
@@ -23,14 +31,17 @@ struct Input {
 
 Skip Decide(const Input& in);
 
-/// Exactly one generated frame per real frame (2x) for AMD FSR.
+/// Number of generated frames between real frames (0 for off, 1 for 2X, 2 for 3X ... 5 for 6X).
 int GeneratedFrames(int mode);
 
 class Pacing {
 public:
     using Clock = std::chrono::steady_clock;
-    /// Called once per new real frame, before presenting either member of its pair.
+    /// Called once per new real frame, before presenting either member of its pair (2X).
     Clock::time_point RealDeadline(Clock::time_point ready);
+
+    /// Multi-frame deadline for index in 1..totalGenerated (2X..6X).
+    Clock::time_point MultiFrameDeadline(Clock::time_point ready, int frameIndex, int totalGenerated);
 
 private:
     Clock::time_point previous{};

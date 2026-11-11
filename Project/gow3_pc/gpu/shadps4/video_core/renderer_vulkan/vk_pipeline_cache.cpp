@@ -330,6 +330,28 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
     return info;
 }
 
+static std::filesystem::path GetSpmPipelineCachePath() {
+    const char* user_dir = std::getenv("GOW3_GPU_USER_DIR");
+    if (user_dir && user_dir[0]) {
+        std::filesystem::path p = std::filesystem::path(user_dir) / "cache" / "spm_vk_pipeline_cache.bin";
+        std::error_code ec;
+        std::filesystem::create_directories(p.parent_path(), ec);
+        return p;
+    }
+#ifdef _WIN32
+    if (const char* localapp = std::getenv("LOCALAPPDATA"); localapp && localapp[0]) {
+        std::filesystem::path p = std::filesystem::path(localapp) / "Uncharted" / "shaders" / "spm_vk_pipeline_cache.bin";
+        std::error_code ec;
+        std::filesystem::create_directories(p.parent_path(), ec);
+        return p;
+    }
+#endif
+    std::filesystem::path p = std::filesystem::current_path() / "cache" / "spm_vk_pipeline_cache.bin";
+    std::error_code ec;
+    std::filesystem::create_directories(p.parent_path(), ec);
+    return p;
+}
+
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                              AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
@@ -409,7 +431,39 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_shader_stencil_export = instance_.IsShaderStencilExportSupported(),
     };
 
-    auto [cache_result, cache] = instance.GetDevice().createPipelineCacheUnique({});
+    // SPM Persistent Compilation: load existing pipeline cache from disk if available
+    std::vector<char> initial_cache_data;
+    const std::filesystem::path cache_path = GetSpmPipelineCachePath();
+    if (std::filesystem::exists(cache_path)) {
+        std::ifstream file(cache_path, std::ios::binary | std::ios::ate);
+        if (file) {
+            const auto stream_size = file.tellg();
+            if (stream_size > 32) {
+                const auto size = static_cast<std::size_t>(stream_size);
+                initial_cache_data.resize(size);
+                file.seekg(0);
+                file.read(initial_cache_data.data(), size);
+                LOG_INFO(Render_Vulkan, "SPM: Loaded persistent pipeline cache ({} bytes) from {}", size, cache_path.string());
+            }
+        }
+    }
+
+    vk::PipelineCacheCreateInfo cache_ci{};
+    if (!initial_cache_data.empty()) {
+        cache_ci.initialDataSize = initial_cache_data.size();
+        cache_ci.pInitialData = initial_cache_data.data();
+    }
+    auto [cache_result, cache] = instance.GetDevice().createPipelineCacheUnique(cache_ci);
+    if (cache_result != vk::Result::eSuccess && !initial_cache_data.empty()) {
+        LOG_WARNING(Render_Vulkan, "SPM: Incompatible/corrupted pipeline cache, recreating clean cache");
+        std::error_code ec;
+        std::filesystem::remove(cache_path, ec);
+        cache_ci.initialDataSize = 0;
+        cache_ci.pInitialData = nullptr;
+        auto fallback_cache = instance.GetDevice().createPipelineCacheUnique(cache_ci);
+        cache_result = fallback_cache.result;
+        cache = std::move(fallback_cache.value);
+    }
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
@@ -439,6 +493,19 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
 PipelineCache::~PipelineCache() {
     StopWarmUp();
     FinishCompilations();
+    if (pipeline_cache) {
+        auto [data_result, data] = instance.GetDevice().getPipelineCacheData(*pipeline_cache);
+        if (data_result == vk::Result::eSuccess && !data.empty()) {
+            const std::filesystem::path cache_path = GetSpmPipelineCachePath();
+            std::error_code ec;
+            std::filesystem::create_directories(cache_path.parent_path(), ec);
+            std::ofstream file(cache_path, std::ios::binary | std::ios::trunc);
+            if (file) {
+                file.write(reinterpret_cast<const char*>(data.data()), data.size());
+                LOG_INFO(Render_Vulkan, "SPM: Persistently saved {} bytes to pipeline cache: {}", data.size(), cache_path.string());
+            }
+        }
+    }
 }
 
 // gow3: shader/pipeline compile time on the GPU thread, reported by GOW3_FRAME_STATS.

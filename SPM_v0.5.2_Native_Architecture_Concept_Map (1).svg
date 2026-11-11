@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="svgTitle svgDescription">
+  <title id="svgTitle">UNCHARTED Sic Parvis Magna Collection — v0.5.2 Beta concept map</title>
+  <desc id="svgDescription">A fully vector architecture concept map. SPMCore is the central native runtime and connects four pillars: platform compatibility, launcher experience, game performance, and release/update delivery. All feed a verified QA gate for v0.5.2 Beta.</desc>
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a111d"/>
+      <stop offset="65%" stop-color="#101a2a"/>
+      <stop offset="100%" stop-color="#0b121d"/>
+    </linearGradient>
+    <linearGradient id="hub" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1d2938"/>
+      <stop offset="53%" stop-color="#253647"/>
+      <stop offset="100%" stop-color="#1c2939"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#182437"/>
+      <stop offset="100%" stop-color="#121d2e"/>
+    </linearGradient>
+    <linearGradient id="qa" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#172b33"/>
+      <stop offset="100%" stop-color="#152534"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity=".032" stroke-width="1"/>
+    </pattern>
+    <filter id="cardShadow" x="-15%" y="-15%" width="130%" height="145%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="9" result="blur"/>
+      <feOffset in="blur" dy="7" result="offset"/>
+      <feComponentTransfer in="offset" result="fade"><feFuncA type="linear" slope="0.38"/></feComponentTransfer>
+      <feMerge><feMergeNode in="fade"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowGold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#e4ba74"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#64d4c4"/>
+    </marker>
+    <style>
+      .font { font-family: 'Segoe UI', Inter, 'DejaVu Sans', Arial, sans-serif; }
+      .title { fill:#f4f4f3; font-weight:700; font-size:43px; letter-spacing:1.0px; }
+      .subtitle { fill:#a9b8c8; font-size:20px; }
+      .hub-title { fill:#fff6e7; font-size:43px; font-weight:800; letter-spacing:1.7px; }
+      .hub-sub { fill:#c3d2de; font-size:20px; }
+      .hub-small { fill:#e6bd7e; font-size:17px; font-weight:600; letter-spacing:1px; }
+      .card-number { font-size:16px; font-weight:800; letter-spacing:2.5px; }
+      .card-title { fill:#f5f5f3; font-size:25px; font-weight:750; }
+      .card-sub { fill:#9baec1; font-size:15px; }
+      .item-title { fill:#f0f5f7; font-size:19px; font-weight:700; }
+      .item-text { fill:#adbdcc; font-size:17px; }
+      .qa-title { fill:#d3fff6; font-size:26px; font-weight:800; letter-spacing:.7px; }
+      .qa-text { fill:#b0c5cb; font-size:18px; }
+      .badge-text { fill:#d8e7e9; font-size:15px; font-weight:700; letter-spacing:1.3px; }
+    </style>
+  </defs>
+
+  <!-- Everything below is native SVG geometry/text; no raster images or foreignObject elements. -->
+  <rect width="1600" height="1120" fill="url(#canvas)"/>
+  <rect width="1600" height="1120" fill="url(#grid)"/>
+  <path d="M56 135H1544" stroke="#e1b67d" stroke-width="1.4" stroke-opacity=".48"/>
+  <g class="font">
+    <text x="63" y="77" class="title">UNCHARTED <tspan fill="#e7be7e">/</tspan> SIC PARVIS MAGNA</text>
+    <text x="64" y="114" class="subtitle">Native compatibility, streamlined architecture and measurable performance</text>
+    <rect x="1343" y="50" width="196" height="42" rx="21" fill="#2c2926" stroke="#b78d56" stroke-width="1.5"/>
+    <text x="1441" y="77" text-anchor="middle" fill="#f5d398" font-size="18" font-weight="750">v0.5.2 BETA</text>
+  </g>
+
+  <!-- SPMCore: shared platform-independent native hub -->
+  <g filter="url(#cardShadow)">
+    <rect x="257" y="165" width="1086" height="170" rx="24" fill="url(#hub)" stroke="#d9ab69" stroke-opacity=".95" stroke-width="2"/>
+    <rect x="257" y="165" width="9" height="170" rx="4" fill="#e7b875"/>
+  </g>
+  <g class="font">
+    <text x="800" y="221" class="hub-small" text-anchor="middle">CENTRAL SHARED RUNTIME</text>
+    <text x="800" y="273" class="hub-title" text-anchor="middle">SPMCore</text>
+    <text x="800" y="306" class="hub-sub" text-anchor="middle">Windows: SPMCore.dll  •  Linux: libSPMCore.so  •  C++20 / CMake</text>
+  </g>
+
+  <!-- Shared hub routes; clear parent/child geometry -->
+  <g fill="none" stroke="#dfb476" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".9">
+    <path d="M800 335V359H230V400" marker-end="url(#arrowGold)"/>
+    <path d="M800 359H610V400" marker-end="url(#arrowGold)"/>
+    <path d="M800 359H990V400" marker-end="url(#arrowGold)"/>
+    <path d="M800 359H1370V400" marker-end="url(#arrowGold)"/>
+  </g>
+  <g fill="#e3ba78"><circle cx="800" cy="359" r="5"/><circle cx="230" cy="359" r="4"/><circle cx="610" cy="359" r="4"/><circle cx="990" cy="359" r="4"/><circle cx="1370" cy="359" r="4"/></g>
+
+  <!-- Four pillar cards -->
+  <g filter="url(#cardShadow)">
+    <rect x="55" y="403" width="350" height="516" rx="21" fill="url(#panel)" stroke="#4e92c4" stroke-width="1.7"/>
+    <rect x="435" y="403" width="350" height="516" rx="21" fill="url(#panel)" stroke="#a795f1" stroke-width="1.7"/>
+    <rect x="815" y="403" width="350" height="516" rx="21" fill="url(#panel)" stroke="#e3ad66" stroke-width="1.7"/>
+    <rect x="1195" y="403" width="350" height="516" rx="21" fill="url(#panel)" stroke="#66c4a6" stroke-width="1.7"/>
+  </g>
+
+  <g class="font">
+    <!-- Pillar 1: Windows/Linux -->
+    <text x="82" y="444" class="card-number" fill="#7ecaff">01 / PLATFORM TARGETS</text>
+    <text x="82" y="477" class="card-title">Native Compatibility</text>
+    <text x="82" y="504" class="card-sub">Separate builds, one shared core</text>
+    <path d="M82 522H377" stroke="#4e92c4" stroke-opacity=".5"/>
+    <circle cx="87" cy="554" r="4.5" fill="#7ecaff"/>
+    <text x="102" y="562" class="item-title">Windows legacy</text>
+    <text x="102" y="589" class="item-text">7 SP1, 8, 8.1: x86 + x64</text>
+    <text x="102" y="614" class="item-text">Win10: x86/x64; Win11: x64</text>
+    <circle cx="87" cy="652" r="4.5" fill="#7ecaff"/>
+    <text x="102" y="660" class="item-title">Native Linux</text>
+    <text x="102" y="687" class="item-text">ELF x64; x86 feasibility</text>
+    <text x="102" y="712" class="item-text">X11 / Wayland • No Wine</text>
+    <circle cx="87" cy="750" r="4.5" fill="#7ecaff"/>
+    <text x="102" y="758" class="item-title">Platform boundaries</text>
+    <text x="102" y="785" class="item-text">Correct native APIs + ABI</text>
+    <text x="102" y="810" class="item-text">Never mix binary architectures</text>
+    <circle cx="87" cy="846" r="4.5" fill="#7ecaff"/>
+    <text x="102" y="854" class="item-title">Proof of compatibility</text>
+    <text x="102" y="881" class="item-text">CI builds + real OS tests</text>
+
+    <!-- Pillar 2: Launcher -->
+    <text x="462" y="444" class="card-number" fill="#b8aaff">02 / LAUNCHER EXPERIENCE</text>
+    <text x="462" y="477" class="card-title">Explorer's Desk</text>
+    <text x="462" y="504" class="card-sub">Native UI with feature parity</text>
+    <path d="M462 522H757" stroke="#a795f1" stroke-opacity=".5"/>
+    <circle cx="467" cy="554" r="4.5" fill="#b8aaff"/>
+    <text x="482" y="562" class="item-title">SDL3 + C++ UI</text>
+    <text x="482" y="589" class="item-text">Migrate screen-by-screen</text>
+    <text x="482" y="614" class="item-text">Keep WPF until full parity</text>
+    <circle cx="467" cy="652" r="4.5" fill="#b8aaff"/>
+    <text x="482" y="660" class="item-title">Complete localization</text>
+    <text x="482" y="687" class="item-text">Menus, errors and all labels</text>
+    <text x="482" y="712" class="item-text">10 supported languages</text>
+    <circle cx="467" cy="750" r="4.5" fill="#b8aaff"/>
+    <text x="482" y="758" class="item-title">Real GPU selection</text>
+    <text x="482" y="785" class="item-text">DXGI / Vulkan enumeration</text>
+    <text x="482" y="810" class="item-text">Verify active render device</text>
+    <circle cx="467" cy="846" r="4.5" fill="#b8aaff"/>
+    <text x="482" y="854" class="item-title">Polished interaction</text>
+    <text x="482" y="881" class="item-text">Controls, DPI, accessible UI</text>
+
+    <!-- Pillar 3: Performance -->
+    <text x="842" y="444" class="card-number" fill="#f4c27b">03 / GAME PERFORMANCE</text>
+    <text x="842" y="477" class="card-title">Game Optimization</text>
+    <text x="842" y="504" class="card-sub">Frame-time stability first</text>
+    <path d="M842 522H1137" stroke="#e3ad66" stroke-opacity=".55"/>
+    <circle cx="847" cy="554" r="4.5" fill="#f4c27b"/>
+    <text x="862" y="562" class="item-title">Visibility &amp; culling</text>
+    <text x="862" y="589" class="item-text">Frustum + safe occlusion</text>
+    <text x="862" y="614" class="item-text">Preserve shadows / effects</text>
+    <circle cx="847" cy="652" r="4.5" fill="#f4c27b"/>
+    <text x="862" y="660" class="item-title">VRAM &amp; streaming</text>
+    <text x="862" y="687" class="item-text">Mip residency and budgets</text>
+    <text x="862" y="712" class="item-text">Safe asynchronous uploads</text>
+    <circle cx="847" cy="750" r="4.5" fill="#f4c27b"/>
+    <text x="862" y="758" class="item-title">Shaders &amp; scheduling</text>
+    <text x="862" y="785" class="item-text">Cache pipelines; fewer stalls</text>
+    <text x="862" y="810" class="item-text">Scalable quality settings</text>
+    <circle cx="847" cy="846" r="4.5" fill="#f4c27b"/>
+    <text x="862" y="854" class="item-title">Benchmark evidence</text>
+    <text x="862" y="881" class="item-text">FPS, 1% lows, P95 / P99</text>
+
+    <!-- Pillar 4: Distribution -->
+    <text x="1222" y="444" class="card-number" fill="#81e5c8">04 / RELEASE DELIVERY</text>
+    <text x="1222" y="477" class="card-title">Isolated Updates</text>
+    <text x="1222" y="504" class="card-sub">Independent platform channels</text>
+    <path d="M1222 522H1517" stroke="#66c4a6" stroke-opacity=".55"/>
+    <circle cx="1227" cy="554" r="4.5" fill="#81e5c8"/>
+    <text x="1242" y="562" class="item-title">Immutable platform ID</text>
+    <text x="1242" y="589" class="item-text">OS + CPU + release channel</text>
+    <text x="1242" y="614" class="item-text">No cross-platform updates</text>
+    <circle cx="1227" cy="652" r="4.5" fill="#81e5c8"/>
+    <text x="1242" y="660" class="item-title">Exact release matching</text>
+    <text x="1242" y="687" class="item-text">Only eligible GitHub assets</text>
+    <text x="1242" y="712" class="item-text">No match = no update offer</text>
+    <circle cx="1227" cy="750" r="4.5" fill="#81e5c8"/>
+    <text x="1242" y="758" class="item-title">Safe installation</text>
+    <text x="1242" y="785" class="item-text">SHA-256 + staged rollback</text>
+    <text x="1242" y="810" class="item-text">Preserve saves and settings</text>
+    <circle cx="1227" cy="846" r="4.5" fill="#81e5c8"/>
+    <text x="1242" y="854" class="item-title">Lean distributions</text>
+    <text x="1242" y="881" class="item-text">Only required native files</text>
+  </g>
+
+  <!-- Every pillar feeds the same release verification gate -->
+  <g fill="none" stroke="#64d4c4" stroke-opacity=".76" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M230 919V950H800"/>
+    <path d="M610 919V950"/>
+    <path d="M990 919V950"/>
+    <path d="M1370 919V950H800"/>
+    <path d="M800 950V970" marker-end="url(#arrowTeal)"/>
+  </g>
+  <g fill="#64d4c4"><circle cx="230" cy="950" r="4"/><circle cx="610" cy="950" r="4"/><circle cx="800" cy="950" r="5"/><circle cx="990" cy="950" r="4"/><circle cx="1370" cy="950" r="4"/></g>
+
+  <!-- Release QA gate -->
+  <rect x="256" y="973" width="1088" height="126" rx="22" fill="url(#qa)" stroke="#65cdbd" stroke-width="2"/>
+  <g class="font">
+    <text x="285" y="1013" class="qa-title">v0.5.2 Beta / Evidence-Based Release Gate</text>
+    <text x="285" y="1042" class="qa-text">Build + runtime tests + visual checks + benchmark comparison</text>
+    <rect x="285" y="1056" width="154" height="29" rx="14.5" fill="#23463e" stroke="#3a9c7e"/>
+    <text x="362" y="1076" class="badge-text" text-anchor="middle">VERIFIED</text>
+    <rect x="451" y="1056" width="184" height="29" rx="14.5" fill="#41412d" stroke="#bca560"/>
+    <text x="543" y="1076" class="badge-text" text-anchor="middle">NOT TESTED</text>
+    <rect x="647" y="1056" width="146" height="29" rx="14.5" fill="#452f37" stroke="#aa657a"/>
+    <text x="720" y="1076" class="badge-text" text-anchor="middle">BLOCKED</text>
+    <text x="1307" y="1052" text-anchor="end" fill="#e8c18a" font-size="20" font-weight="750">NO FALSE CLAIMS</text>
+    <text x="1307" y="1079" text-anchor="end" fill="#9ebdbb" font-size="15">Publish only validated targets</text>
+  </g>
+</svg>

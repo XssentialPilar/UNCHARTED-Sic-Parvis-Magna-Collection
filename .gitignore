@@ -62,3 +62,7 @@ UNCHARTED_KEYBOARD_MOUSE_EN_V4/
 *.suo
 /gow3_pc/
 /gow3_pc/out/
+
+Project/launcher_net/publish_single/
+Project/vendor/sdl3/SDL3-3.2.8/
+Project/vendor/SDL3/SDL3-3.2.8/
