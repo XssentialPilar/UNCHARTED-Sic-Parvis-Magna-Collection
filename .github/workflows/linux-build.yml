@@ -20,6 +20,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+          # Linux CI only builds Project/spm_core; avoid materializing unrelated
+          # vendor trees with paths longer than the hosted runner supports.
+          sparse-checkout: |
+            VERSION
+            Project/spm_core
+          sparse-checkout-cone: true
 
       - name: Install System Dependencies
         run: |

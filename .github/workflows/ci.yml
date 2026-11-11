@@ -19,6 +19,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+          # The FSR-Vulkan vendor tree contains generated headers whose paths
+          # exceed the Windows checkout limit, but this validation job never
+          # builds that backend.
+          sparse-checkout: |
+            *
+            !Project/gow3_pc/gpu/third_party/fsr-vulkan/**
+          sparse-checkout-cone: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
