@@ -1,5 +1,0 @@
-﻿b0f40d87d0cf605bf5349249fa1d9298166bec276e03faae87e65c7f5a13c7fb  SPM-v0.6.0-beta-linux-x64.zip
-37e50e8d5e8b7b46a058d789363a8d8ec92116e7d777fc7bf7f611fe04f2d0e1  SPM-v0.6.0-beta-win10-x64.zip
-cd686206fd68f4a40881ec2ebaecaffac30211b74182bab9ceff63ba60397ebb  SPM-v0.6.0-beta-win11-x64.zip
-6b10ae4f136deb3daee25268efb5e889e015eb9a81ab5dbca596ffbdeac2057f  SPM-v0.6.0-beta-win7-x64.zip
-ca13637ffbdc525daa87818667513029ffc95aad7d3d5825e6b21db181684049  SPM-v0.6.0-beta-win-x86.zip
