@@ -1,6 +1,0 @@
-{
-  "timestamp_iso": "2026-11-07T13:53:58.334Z",
-  "stall_duration_seconds": 3.30097,
-  "status": "STALL_DETECTED",
-  "message": "Render thread failed to present for > 3.0 seconds"
-}

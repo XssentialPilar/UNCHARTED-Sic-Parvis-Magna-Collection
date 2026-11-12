@@ -1,4 +1,0 @@
-{"frame":262,"timestamp_us":7083135783,"frame_time_ms":25.18,"baseline_ms":10.48,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
-{"frame":264,"timestamp_us":7083176612,"frame_time_ms":24.66,"baseline_ms":11.46,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
-{"frame":285,"timestamp_us":7083631241,"frame_time_ms":32.90,"baseline_ms":18.46,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
-{"frame":286,"timestamp_us":7083656655,"frame_time_ms":25.41,"baseline_ms":18.80,"primary_suspicion":"GPU_VBLANK_MISS","details":""}
