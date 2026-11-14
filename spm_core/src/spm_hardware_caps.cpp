@@ -19,6 +19,19 @@
 #include <iterator>
 #include <string>
 
+namespace {
+
+void CopyString(char* destination, size_t capacity, const std::string& source) {
+    if (!destination || capacity == 0) {
+        return;
+    }
+    const size_t copied = std::min(source.size(), capacity - 1);
+    std::memcpy(destination, source.data(), copied);
+    destination[copied] = '\0';
+}
+
+} // namespace
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -110,15 +123,6 @@ std::string ToUtf8(const wchar_t* text) {
     WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), needed, nullptr, nullptr);
     out.resize(static_cast<size_t>(needed - 1));
     return out;
-}
-
-void CopyString(char* destination, size_t capacity, const std::string& source) {
-    if (!destination || capacity == 0) {
-        return;
-    }
-    const size_t copied = std::min(source.size(), capacity - 1);
-    std::memcpy(destination, source.data(), copied);
-    destination[copied] = '\0';
 }
 
 // ---------------------------------------------------------------------------
@@ -527,22 +531,6 @@ NpuProbeResult DetectNpu() {
 
 #endif // _WIN32
 
-#if defined(__linux__)
-namespace {
-
-bool CpuSupports(const char* feature) {
-#if defined(__x86_64__) || defined(__i386__)
-    __builtin_cpu_init();
-    return __builtin_cpu_supports(feature);
-#else
-    (void)feature;
-    return false;
-#endif
-}
-
-} // namespace
-#endif
-
 extern "C" {
 
 SPM_CAPS_API int SPM_DetectHardwareCapabilities(const char* targetPath, SpmHardwareCapabilities* outCaps) {
@@ -578,9 +566,16 @@ SPM_CAPS_API int SPM_DetectHardwareCapabilities(const char* targetPath, SpmHardw
     outCaps->directMlSupported = SoftwareRuntimeInstalled(L"directml.dll") ? 1 : 0;
     outCaps->onnxRuntimeSupported = SoftwareRuntimeInstalled(L"onnxruntime.dll") ? 1 : 0;
 #else
-    outCaps->cpuHasAvx2 = CpuSupports("avx2") ? 1 : 0;
-    outCaps->cpuHasAvx512 = CpuSupports("avx512f") ? 1 : 0;
-    outCaps->cpuHasFma = CpuSupports("fma") ? 1 : 0;
+#if defined(__x86_64__) || defined(__i386__)
+    __builtin_cpu_init();
+    outCaps->cpuHasAvx2 = __builtin_cpu_supports("avx2") ? 1 : 0;
+    outCaps->cpuHasAvx512 = __builtin_cpu_supports("avx512f") ? 1 : 0;
+    outCaps->cpuHasFma = __builtin_cpu_supports("fma") ? 1 : 0;
+#else
+    outCaps->cpuHasAvx2 = 0;
+    outCaps->cpuHasAvx512 = 0;
+    outCaps->cpuHasFma = 0;
+#endif
 
     const long pageSize = sysconf(_SC_PAGESIZE);
     const long totalPages = sysconf(_SC_PHYS_PAGES);

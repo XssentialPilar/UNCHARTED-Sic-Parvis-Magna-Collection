@@ -110,7 +110,7 @@ void UnloadLibrary(void* library) {
 #endif
 }
 
-std::string NormalizeDeviceName(std::string name) {
+[[maybe_unused]] std::string NormalizeDeviceName(std::string name) {
     std::string out;
     out.reserve(name.size());
     for (const unsigned char c : name) {
