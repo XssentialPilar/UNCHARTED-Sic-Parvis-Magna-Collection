@@ -20,11 +20,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
-          # Linux CI only builds Project/spm_core; avoid materializing unrelated
-          # vendor trees with paths longer than the hosted runner supports.
           sparse-checkout: |
             VERSION
-            Project/spm_core
+            spm_core
           sparse-checkout-cone-mode: true
 
       - name: Install System Dependencies
@@ -44,7 +42,7 @@ jobs:
 
       - name: Configure CMake for Native Linux
         run: |
-          cmake -B build-linux -S Project/spm_core -G Ninja \
+          cmake -B build-linux -S spm_core -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=20
 
@@ -67,13 +65,13 @@ jobs:
         run: |
           mkdir -p dist-linux/lib
           cp build-linux/libSPMCore.so dist-linux/lib/
-          cp -r Project/spm_core/include dist-linux/
+          cp -r spm_core/include dist-linux/
           cp VERSION dist-linux/
-          tar -czvf Uncharted-SPMCore-v0.5.2-linux-x64.tar.gz -C dist-linux .
+          tar -czvf Uncharted-SPMCore-v0.6.1-linux-x64.tar.gz -C dist-linux .
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Uncharted-SPMCore-v0.5.2-linux-x64
-          path: Uncharted-SPMCore-v0.5.2-linux-x64.tar.gz
+          name: Uncharted-SPMCore-v0.6.1-linux-x64
+          path: Uncharted-SPMCore-v0.6.1-linux-x64.tar.gz
           retention-days: 14

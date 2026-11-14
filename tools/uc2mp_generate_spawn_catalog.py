@@ -5,7 +5,7 @@ import json
 import math
 from pathlib import Path
 import struct
-from uc2mp_extract_spawns import extract, KNOWN, PS3_ELF_SHA256, require, sid
+from uc2mp_extract_spawns import extract, is_relative_to, KNOWN, PS3_ELF_SHA256, require, sid
 
 
 def float_literal(value):
@@ -96,7 +96,7 @@ def main():
     roots = [args.base.resolve(), args.ps3_cache.resolve(), args.ps3_elf.resolve()]
     if args.patch:
         roots.append(args.patch.resolve())
-    require(not any(output == root or output.is_relative_to(root) for root in roots), 'Cannot write generated metadata into original assets')
+    require(not any(output == root or is_relative_to(output, root) for root in roots), 'Cannot write generated metadata into original assets')
     source = render(extract(args.base, args.patch, args.ps3_cache, args.ps3_elf, args.ps3_pak22))
     if args.check:
         require(output.read_text(encoding='utf-8') == source, 'Generated header is stale')

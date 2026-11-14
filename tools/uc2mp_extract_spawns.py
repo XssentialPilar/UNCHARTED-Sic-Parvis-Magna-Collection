@@ -12,6 +12,14 @@ import math
 import re
 import struct
 
+
+def is_relative_to(path, root):
+    try:
+        Path(path).relative_to(root)
+        return True
+    except ValueError:
+        return False
+
 PS3_ELF_SHA256 = '13b11b420508086cf5fdf3f7f99a712352b7c2dc1172228c55be00aca0c80eeb'
 KNOWN = {
     'village-multi': {
@@ -208,7 +216,7 @@ def main():
     protected = [args.base.resolve(), args.ps3_cache.resolve(), args.ps3_elf.resolve()]
     if args.patch:
         protected.append(args.patch.resolve())
-    require(all(destination != path and not destination.is_relative_to(path) for path in protected), 'Output must stay outside original assets')
+    require(all(destination != path and not is_relative_to(destination, path) for path in protected), 'Output must stay outside original assets')
     result = extract(args.base, args.patch, args.ps3_cache, args.ps3_elf, args.ps3_pak22)
     encoded = json.dumps(result, indent=2) + '\n'
     if destination.exists():

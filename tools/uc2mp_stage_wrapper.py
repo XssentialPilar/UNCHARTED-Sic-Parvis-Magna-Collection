@@ -19,6 +19,14 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _is_relative_to(path, root):
+    try:
+        Path(path).relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def validate_and_append(data):
     text = data.decode('utf-8')
     headers = list(re.finditer(r'(?m)^level-name[ \t]+([^\r\n]+)', text))
@@ -46,7 +54,7 @@ def build_overlay(base, patch, overlay):
     base, overlay = Path(base).resolve(), Path(overlay).resolve()
     patch = Path(patch).resolve() if patch else None
     roots = ([patch] if patch else []) + [base]
-    if any(overlay == root or overlay.is_relative_to(root) for root in roots):
+    if any(overlay == root or _is_relative_to(overlay, root) for root in roots):
         raise ValueError('Overlay must be outside both original game roots')
     source = next((root / RELATIVE_MANIFEST for root in roots if (root / RELATIVE_MANIFEST).is_file()), None)
     package = next((root / RELATIVE_PACKAGE for root in roots if (root / RELATIVE_PACKAGE).is_file()), None)
@@ -59,7 +67,7 @@ def build_overlay(base, patch, overlay):
     output, appended = validate_and_append(original)
     destination = overlay / RELATIVE_MANIFEST
     resolved_destination = destination.resolve()
-    if not resolved_destination.is_relative_to(overlay) or any(resolved_destination.is_relative_to(root) for root in roots):
+    if not _is_relative_to(resolved_destination, overlay) or any(_is_relative_to(resolved_destination, root) for root in roots):
         raise ValueError('Resolved destination escapes the isolated overlay')
     if destination.exists() and destination.read_bytes() != output:
         raise ValueError('Destination contains a different manifest; refusing to overwrite an unrelated overlay')

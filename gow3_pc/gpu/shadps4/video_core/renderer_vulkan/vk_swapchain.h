@@ -1,0 +1,216 @@
+// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <vector>
+#include "common/types.h"
+#include "gow3_dxgi_presenter.h"
+#include "video_core/renderer_vulkan/vk_common.h"
+#include <vk_mem_alloc.h>
+
+namespace Frontend {
+class WindowSDL;
+}
+
+namespace Vulkan {
+
+class Instance;
+class Scheduler;
+
+class Swapchain {
+public:
+    explicit Swapchain(const Instance& instance, const Frontend::WindowSDL& window);
+    ~Swapchain();
+
+    /// Creates (or recreates) the swapchain with a given size.
+    void Create(u32 width, u32 height);
+
+    /// Recreates the swapchain with a given size and current surface.
+    void Recreate(u32 width, u32 height, const char* reason = nullptr);
+
+    /// Successful swapchain creations so far (diagnostics: a storm shows in this counter).
+    u64 Generation() const { return generation; }
+    /// Same-size, same-mode recreation requests that were suppressed as redundant.
+    u64 RedundantRecreations() const { return redundant_recreations; }
+
+    /// Acquires the next image in the swapchain.
+    bool AcquireNextImage();
+
+    /// Presents the current image and move to the next one
+    bool Present();
+
+    bool IsHeadless() const { return headless; }
+    bool UsesOffscreenPresent() const { return headless || use_dxgi; }
+    bool UsesDxgi() const { return use_dxgi; }
+    bool HasGpuPresentSync() const noexcept;
+    bool PrepareGpuPresentSync(vk::Semaphore& out_signal_sem, u64& out_signal_value) noexcept;
+    vk::ImageLayout FinalLayout() const {
+        return UsesOffscreenPresent() ? vk::ImageLayout::eGeneral : vk::ImageLayout::ePresentSrcKHR;
+    }
+
+    vk::SurfaceKHR GetSurface() const {
+        return surface;
+    }
+
+    vk::Image Image() const {
+        return images[image_index];
+    }
+
+    vk::ImageView ImageView() const {
+        return images_view[image_index];
+    }
+
+    vk::SurfaceFormatKHR GetSurfaceFormat() const {
+        return surface_format;
+    }
+
+    vk::SwapchainKHR GetHandle() const {
+        return swapchain;
+    }
+
+    u32 GetWidth() const {
+        return width;
+    }
+
+    u32 GetHeight() const {
+        return height;
+    }
+
+    u32 GetImageCount() const {
+        return image_count;
+    }
+
+    u32 GetFrameIndex() const {
+        return frame_index;
+    }
+
+    vk::PresentModeKHR GetPresentMode() const {
+        return present_mode;
+    }
+
+    vk::Extent2D GetExtent() const {
+        return extent;
+    }
+
+    [[nodiscard]] vk::Semaphore GetImageAcquiredSemaphore() const {
+        return image_acquired[frame_index];
+    }
+
+    [[nodiscard]] vk::Semaphore GetPresentReadySemaphore() const {
+        return present_ready[image_index];
+    }
+
+    [[nodiscard]] vk::Image ImageAt(u32 idx) const {
+        return images[idx];
+    }
+
+    [[nodiscard]] vk::ImageView ImageViewAt(u32 idx) const {
+        return images_view[idx];
+    }
+
+    [[nodiscard]] vk::Semaphore PresentReadyAt(u32 idx) const {
+        return present_ready[idx];
+    }
+
+    VkResult AcquireNextImageRaw(VkSemaphore signal_semaphore, u32* out_image_index);
+
+    bool PresentImage(u32 img_idx, vk::Semaphore wait_semaphore, bool apply_pacer = true);
+
+    void SetFrameGenActive(bool dlss_g_active, bool fsr_fg_active);
+
+    [[nodiscard]] bool IsDlssGActive() const noexcept {
+        return dlss_g_active_;
+    }
+
+    [[nodiscard]] bool IsFsrFgActive() const noexcept {
+        return fsr_fg_active_;
+    }
+
+    bool HasHDR() const {
+        return supports_hdr;
+    }
+
+    void SetHDR(bool hdr);
+
+    /// gow3: VSync from the in-game menu (Gow3Settings::vsync); recreates the swapchain when it
+    /// changed. Present thread only.
+    void UpdateVsync();
+
+    bool GetHDR() const {
+        return needs_hdr;
+    }
+
+private:
+    /// Selects the best available swapchain image format
+    void FindPresentFormat();
+
+    /// Selects the best available present mode
+    void FindPresentMode();
+
+    /// Sets the surface properties according to device capabilities
+    void SetSurfaceProperties();
+
+    /// Destroys current swapchain resources
+    void Destroy();
+
+    /// Performs creation of image views and framebuffers from the swapchain images
+    void SetupImages();
+    void CreateOffscreenImages();
+
+    /// Creates the image acquired and present ready semaphores
+    void RefreshSemaphores();
+
+private:
+    const Instance& instance;
+    const Frontend::WindowSDL& window;
+    vk::SwapchainKHR swapchain{};
+    vk::SurfaceKHR surface{};
+    vk::SurfaceFormatKHR surface_format;
+    vk::Format view_format;
+    vk::PresentModeKHR present_mode = vk::PresentModeKHR::eFifo; ///< FindPresentMode overrides
+    bool vsync = true; ///< the setting present_mode was chosen for
+    vk::Extent2D extent;
+    vk::SurfaceTransformFlagBitsKHR transform;
+    vk::CompositeAlphaFlagBitsKHR composite_alpha;
+    std::vector<vk::Image> images;
+    std::vector<VmaAllocation> offscreen_allocations;
+    std::vector<vk::ImageView> images_view;
+    std::vector<vk::Semaphore> image_acquired;
+    std::vector<vk::Semaphore> present_ready;
+    std::vector<vk::Fence> acquire_fences; ///< gow3: AcquireNextImage waits on the CPU
+    std::vector<u8> acquire_armed; ///< an acquire that took an image will signal the fence
+
+public:
+    /// gow3: acquires that waited over 2 ms for their image (the display's queue was full).
+    std::atomic<u32> long_acquire_waits{0};
+
+private:
+    u32 width = 0;
+    u32 height = 0;
+    u32 image_count = 0;
+    u32 image_index = 0;
+    u32 frame_index = 0;
+    bool created = false;
+    bool present_dirty = false; ///< present mode/format changed since the last creation
+    u64 generation = 0;
+    u64 redundant_recreations = 0;
+    bool needs_recreation = true;
+    bool headless = false;
+    bool use_dxgi = false;
+    bool dxgi_initialized_images = false;
+    bool dxgi_present_failed = false;
+    std::unique_ptr<Gow3Dxgi::PresenterBridge> dxgi_bridge;
+    Gow3Dxgi::FramePacer frame_pacer;
+    bool needs_hdr = false;    // The game requested HDR swapchain
+    bool supports_hdr = false; // SC supports HDR output
+    bool dlss_g_active_ = false;
+    bool fsr_fg_active_ = false;
+    vk::Fence raw_acquire_fence_{};
+    bool raw_acquire_armed_ = false;
+};
+
+} // namespace Vulkan

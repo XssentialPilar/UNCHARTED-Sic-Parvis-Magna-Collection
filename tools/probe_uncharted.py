@@ -1001,7 +1001,7 @@ def game_window_icon(game):
         return None
 
 
-# Render resolution (Drake's Fortune). The engine's display settings (constructors and the
+# Render resolution (all three games). The engine's display settings (constructors and the
 # 1080p/720p mode switch, all within ~0x700 bytes) store the size in several fields: display
 # and render size (+0x08/+0x18/+0x24/+0x38), aspect, tile grid (+0x40 = width/8, +0x44 =
 # height/4, as the engine's own SetResolution computes them) and a larger size at +0x30/+0x34
@@ -1024,9 +1024,14 @@ def resolution_patch(data, width, height, move=True):
     first = match.start()
     start, end = first - 0x40, first + 0x800
     region = bytearray(data[start:end])
+    # Both copies of the engine's projection aspect must follow the render size. Leaving
+    # these at 16:9 stretches 3D geometry even when every target is already 1920x1200.
+    # Display block layout also documented by Supermedo/uncharted_pc, commit 1ceb2252fff2.
+    aspect_bits = struct.unpack("<I", struct.pack("<f", width / height))[0]
     stores = [
         (0x08, 1920, width), (0x18, 1920, width), (0x24, 1920, width), (0x38, 1920, width),
         (0x0c, 1080, height), (0x1c, 1080, height), (0x28, 1080, height), (0x3c, 1080, height),
+        (0x20, 0x3fe38e39, aspect_bits), (0x2c, 0x3fe38e39, aspect_bits),
         (0x40, 240, width // 8), (0x44, 270, height // 4),
         (0x30, 2560, 2560 * width // 1920), (0x34, 1216, 1216 * height // 1080),
     ]
@@ -1264,6 +1269,19 @@ def ini_value(path, key, default):
     except OSError:
         pass
     return default
+
+
+def settings_path(user, game_key):
+    """Use the same settings for guest patches, runtime overrides and persistence."""
+    explicit = os.environ.get("UNCHARTED_CONFIG_FILE") or os.environ.get("GOW3_CONFIG")
+    if explicit:
+        return Path(explicit)
+    engine = ROOT / "EngineConfig.ini"
+    if engine.is_file():
+        return engine
+    per_game = user / f"probe-{game_key}.ini"
+    legacy = user / "probe.ini"
+    return legacy if not per_game.exists() and legacy.is_file() else per_game
 
 
 def run_once(args, executable, guest_args, loadexec):
@@ -1568,15 +1586,9 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     # Settings per game (the launcher keeps them apart): the started game's own, also when the
     # Collection menu switches games.
     game_key = GAME_KEYS[executable]
-    engine_config = ROOT / "EngineConfig.ini"
-    if engine_config.exists():
-        settings_file = engine_config
-    else:
-        settings_file = Path(os.environ.get("UNCHARTED_CONFIG_FILE") or (user / f"probe-{game_key}.ini"))
-        if not settings_file.exists() and (user / "probe.ini").exists():
-            settings_file = user / "probe.ini"
-    ini_api = ini_value(settings_file, "graphics_api", "dx11")
-    raw_api = (os.environ.get("GOW3_GRAPHICS_API") or ini_api or "dx11").strip().lower()
+    settings_file = settings_path(user, game_key)
+    ini_api = ini_value(settings_file, "graphics_api", "vulkan")
+    raw_api = (os.environ.get("GOW3_GRAPHICS_API") or ini_api or "vulkan").strip().lower()
     if raw_api in ("d3d11", "dx11"):
         api = "dx11"
     elif raw_api in ("d3d12", "dx12"):
@@ -1586,7 +1598,10 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     elif raw_api in ("d3d9", "dx9", "directx9"):
         api = "dx9"
     else:
-        api = "dx11"
+        api = "vulkan"
+    early_fg = (os.environ.get("GOW3_FRAME_GENERATION") or ini_value(settings_file, "frame_generation", "off") or "off").strip().lower()
+    if early_fg not in ("", "0", "off", "false"):
+        api = "vulkan"
 
     ini_vram = ini_value(settings_file, "vram_budget_mb", "0")
     raw_vram_budget = (os.environ.get("GOW3_VRAM_BUDGET_MB") or ini_vram or "0").strip()
@@ -1684,7 +1699,7 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
         env["GOW3_SUN_SHADOW_DISTANCE"] = "0"
         env["GOW3_LIGHT_SHADOW_DISTANCE"] = "0"
 
-    env["GOW3_CONFIG"] = str(engine_config if engine_config.exists() else settings_file)
+    env["GOW3_CONFIG"] = str(settings_file)
     env["UNCHARTED_CONFIG_FILE"] = env["GOW3_CONFIG"]
     env["GOW3_GRAPHICS_API"] = api
     env["GOW3_FRAME_PACER"] = pacer
@@ -1742,9 +1757,37 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
                 env["GOW3_POKE"] = ",".join(pokes)
         else:
             print("Cheats and unlocked rewards: need update 1.02 (not used)")
+    # SPM v0.6.1 Features Forwarding
+    anti_aliasing = os.environ.get("GOW3_ANTI_ALIASING") or ini_value(settings_file, "anti_aliasing", "off")
+    if anti_aliasing:
+        env["GOW3_ANTI_ALIASING"] = anti_aliasing.lower()
+
+    frame_gen = os.environ.get("GOW3_FRAME_GENERATION") or ini_value(settings_file, "frame_generation", "off")
+    if frame_gen:
+        env["GOW3_FRAME_GENERATION"] = frame_gen.lower()
+
+    reflex = os.environ.get("GOW3_REFLEX_MODE") or ini_value(settings_file, "reflex_mode", "off")
+    if reflex:
+        env["GOW3_REFLEX_MODE"] = reflex.lower()
+
+    streaming_budget = os.environ.get("GOW3_STREAMING_BUDGET_MB") or ini_value(settings_file, "streaming_budget_mb", "512")
+    if streaming_budget:
+        env["GOW3_STREAMING_BUDGET_MB"] = str(streaming_budget)
+
+    neural_mode = os.environ.get("GOW3_NEURAL_ASSIST_MODE") or ini_value(settings_file, "neural_assist_mode", "auto")
+    if neural_mode:
+        env["GOW3_NEURAL_ASSIST_MODE"] = neural_mode.lower()
+
+    storage_opt = os.environ.get("GOW3_STORAGE_OPTIMIZATION") or ini_value(settings_file, "storage_optimization", "auto")
+    if storage_opt:
+        env["GOW3_STORAGE_OPTIMIZATION"] = storage_opt.lower()
+
     print(
         f"Engine Architecture: API={api.upper()} | VRAMCap={vram_budget_mb or 'Auto'}MB | "
-        f"Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}"
+        f"Textures={tex_q} | Shadows={shad_q} | SSAO={ssao_q} | Pacer={pacer}\n"
+        f"SPM Pipeline: AA={env.get('GOW3_ANTI_ALIASING', 'off')} | FG={env.get('GOW3_FRAME_GENERATION', 'off')} | "
+        f"Reflex={env.get('GOW3_REFLEX_MODE', 'off')} | Streaming={env.get('GOW3_STREAMING_BUDGET_MB', '512')}MB | "
+        f"Neural={env.get('GOW3_NEURAL_ASSIST_MODE', 'auto')} | Storage={env.get('GOW3_STORAGE_OPTIMIZATION', 'auto')}"
     )
     # Texture filtering (launcher -> Advanced -> Texture filtering): sampler.cpp GOW3_ANISOTROPY raises
     # mipmapped colour textures to at least that ratio (~0% FPS measured in Uncharted 2).
@@ -1764,14 +1807,10 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
     env["PATH"] = os.pathsep.join(extra_bins) + os.pathsep + env.get("PATH", "")
     # UNCHARTED_TEST_GPU_USER_DIR: GPU caches in another folder (tests from an empty shader cache).
     env["GOW3_GPU_USER_DIR"] = env.get("UNCHARTED_TEST_GPU_USER_DIR") or str(user)
-    settings = user / f"probe-{game_key}.ini"
-    if not settings.exists() and (user / "probe.ini").exists():
-        shutil.copy2(user / "probe.ini", settings)  # earlier versions shared one file
-    # UNCHARTED_CONFIG_FILE: another settings file (tests that must not touch the player's).
-    env["GOW3_CONFIG"] = os.environ.get("UNCHARTED_CONFIG_FILE") or str(settings)
-    # Frame rates above 60 need the fast vblank (GOW3_VBLANK_HZ=0); an explicit one is kept.
-    limit = ini_value(Path(env["GOW3_CONFIG"]), "fps_limit", "60")
-    if not limit or limit == "0":
+    env["GOW3_CONFIG"] = str(settings_file)
+    # Frame rates above 60 or unlimited (0) need the fast vblank (GOW3_VBLANK_HZ=0).
+    limit = os.environ.get("GOW3_FPS_LIMIT") or ini_value(Path(env["GOW3_CONFIG"]), "fps_limit", "60")
+    if not limit:
         limit = "60"
     if "GOW3_FPS_LIMIT" not in env:
         env["GOW3_FPS_LIMIT"] = str(limit)
@@ -1780,6 +1819,13 @@ def run_game(args, game, executable, guest_args, loadexec, app0=None, overlays=(
             env["GOW3_VBLANK_HZ"] = "0"
         else:
             env["GOW3_VBLANK_HZ"] = str(limit)
+    if "GOW3_DEFERRED_READBACK" not in env:
+        env["GOW3_DEFERRED_READBACK"] = ini_value(settings_file, "deferred_readback", "1") or "1"
+    env.setdefault("GOW3_OPEN_RAYCAST_READBACKS", "1")
+    if "GOW3_STALE_READBACK" not in env:
+        stale_rb = ini_value(settings_file, "stale_readback", "0")
+        if stale_rb in ("0", "1"):
+            env["GOW3_STALE_READBACK"] = stale_rb
     # Save profiles (launcher Advanced, GitHub #66, 24 Oct 2026): profile N plays as PS4 user N,
     # whose saves are in analysis\uncharted-user\savedata\N (profile 1: the folder of every earlier
     # version). GOW3_USER_ID set outside the launcher (tests) wins.

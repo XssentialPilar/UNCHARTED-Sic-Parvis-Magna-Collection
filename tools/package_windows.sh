@@ -31,6 +31,21 @@ ldd gow3_pc/out/gow3-probe.exe | awk '/clang64/ {print $3}' | sort -u | while re
     cp "$dll" "$stage/gow3_pc/out/"
 done
 
+# Keyboard/mouse prompt bank and journal/map art: the runtime reads both next to
+# the executable, so they belong in the folder the exe lives in. The bank is a
+# generated artifact (*.bin is ignored by git): a tree that never baked it warns
+# instead of failing, and the runtime then falls back to its vector prompts.
+prompt_bank=gow3_pc/gpu/shim/gow3_prompt_assets.bin
+if [[ -f $prompt_bank ]]; then
+    cp "$prompt_bank" "$stage/gow3_pc/out/"
+else
+    echo 'WARNING: gow3_prompt_assets.bin not baked; the package ships without the SVG prompt bank' >&2
+fi
+[[ -f gow3_pc/assets/hud_prompts.zip ]] || {
+    echo 'Missing gow3_pc/assets/hud_prompts.zip (journal/map prompt art)' >&2; exit 1; }
+mkdir -p "$stage/gow3_pc/out/assets"
+cp gow3_pc/assets/hud_prompts.zip "$stage/gow3_pc/out/assets/hud_prompts.zip"
+
 cp gow3_pc/scripts/*.py "$stage/gow3_pc/scripts/"
 cp tools/probe_uncharted.py tools/hang_report.py tools/apply_update.py tools/install_update.py \
     tools/net_overlay.py tools/check_game_files.py tools/game_files_102.json.gz "$stage/tools/"

@@ -4,6 +4,9 @@ References/
 # Build directories and compiler outputs
 Build/
 build/
+build-*/
+dist/
+dist-*/
 bin/
 obj/
 *.obj
@@ -18,9 +21,14 @@ CMakeFiles/
 Testing/
 
 # .NET Launcher build outputs
+launcher_net/bin/
+launcher_net/obj/
+launcher_net/publish/
+launcher_net/publish_single/
 Project/launcher_net/bin/
 Project/launcher_net/obj/
 Project/launcher_net/publish/
+Project/launcher_net/publish_single/
 
 # Runtime diagnostics and session dumps
 Project/diagnostics/Sessions/*
@@ -60,9 +68,13 @@ UNCHARTED_KEYBOARD_MOUSE_EN_V4/
 .vscode/
 *.user
 *.suo
-/gow3_pc/
 /gow3_pc/out/
+/gow3_pc/user/
+/gow3_pc/pgo/
+/gow3_pc/gpu/third_party/fsr-vulkan/
+/gow3_pc/gpu/third_party/streamline/bin/
 
-Project/launcher_net/publish_single/
+vendor/sdl3/SDL3-3.2.8/
+vendor/SDL3/SDL3-3.2.8/
 Project/vendor/sdl3/SDL3-3.2.8/
 Project/vendor/SDL3/SDL3-3.2.8/

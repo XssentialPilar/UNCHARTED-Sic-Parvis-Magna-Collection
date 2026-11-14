@@ -1,0 +1,3 @@
+https://github.com/nothings/stb
+commit 4e9b368bfc071e97206ea5c6adba68dd0cbf8897
+Only stb_image PNG decoding is compiled. Original dual MIT/public-domain license retained.

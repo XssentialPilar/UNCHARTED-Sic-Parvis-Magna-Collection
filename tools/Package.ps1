@@ -44,9 +44,15 @@ function Safe-CopyItem {
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $NetPublishExe = Join-Path $ProjectRoot "launcher_net\publish\Uncharted - Sic Parvis Magna Collection.exe"
+$NetPublishDll = Join-Path $ProjectRoot "launcher_net\publish\launcher_native.dll"
 $MainExe = Join-Path $ProjectRoot "Uncharted - Sic Parvis Magna Collection.exe"
 if (Test-Path $NetPublishExe) {
     Safe-CopyItem -Source $NetPublishExe -Destination $MainExe
+}
+if (Test-Path $NetPublishDll) {
+    Safe-CopyItem -Source $NetPublishDll -Destination (Join-Path $ProjectRoot "launcher_native.dll")
+    Safe-CopyItem -Source $NetPublishDll -Destination (Join-Path $OutputDir "launcher_native.dll")
+    Safe-CopyItem -Source $NetPublishDll -Destination (Join-Path $WorkspaceRoot "launcher_native.dll")
 }
 $StartExe = Join-Path $ProjectRoot "Start Uncharted.exe"
 
@@ -79,6 +85,25 @@ if (Test-Path $ProbeExe) {
     Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $Gow3OutDir "Uncharted.exe")
     Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $DistGow3OutDir "gow3-probe.exe")
     Safe-CopyItem -Source $ProbeExe -Destination (Join-Path $DistGow3OutDir "Uncharted.exe")
+
+    $PromptBin = Join-Path $ProjectRoot "gow3_pc\gpu\shim\gow3_prompt_assets.bin"
+    if (Test-Path $PromptBin) {
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $OutputDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $DistGow3OutDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $Gow3OutDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $BuildDir "gow3_prompt_assets.bin")
+        Safe-CopyItem -Source $PromptBin -Destination (Join-Path $WorkspaceRoot "gow3_prompt_assets.bin")
+    }
+
+    # Journal/map art: the runtime resolves core\assets\hud_prompts.zip next to the exe.
+    $PromptArt = Join-Path $ProjectRoot "gow3_pc\assets\hud_prompts.zip"
+    if (Test-Path $PromptArt) {
+        foreach ($Dir in @($OutputDir, $Gow3OutDir, $DistGow3OutDir, $BuildDir)) {
+            $AssetDir = Join-Path $Dir "assets"
+            if (-not (Test-Path $AssetDir)) { New-Item -ItemType Directory -Force -Path $AssetDir | Out-Null }
+            Safe-CopyItem -Source $PromptArt -Destination (Join-Path $AssetDir "hud_prompts.zip")
+        }
+    }
 
     # Bundle all required MSYS2 clang64 runtime DLLs (SDL3.dll, avcodec-63.dll, avutil-61.dll, swscale-10.dll, etc.)
     $LddCmd = Get-Command ldd.exe -ErrorAction SilentlyContinue
